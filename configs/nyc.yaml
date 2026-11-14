@@ -1,0 +1,31 @@
+# Scientific analysis parameters. Version controlled on purpose:
+# an analysis must be reproducible from this file plus its input
+# manifest, without relying on anyone's environment variables.
+
+schema_version: 1
+
+study_area:
+  id: nyc-pilot
+  crs: EPSG:32618          # UTM 18N, metric grid for area calculations
+  bounds: null             # Set after verifying actual NISAR coverage
+
+analysis:
+  method: backscatter_log_ratio
+  polarization: HH         # PROPOSED, not verified. Compatibility checks
+                           # must reject this if the scenes lack the channel.
+  earlier_product_id: null
+  later_product_id: null
+
+quality:
+  require_finite: true
+  require_positive_intensity: true
+
+filtering:
+  enabled: false
+
+processing:
+  tile_size: 1024
+
+output:
+  format: COG
+  compression: DEFLATE

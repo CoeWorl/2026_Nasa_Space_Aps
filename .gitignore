@@ -272,9 +272,15 @@ pnpm-debug.log*
 **/.pytest_cache/
 **/.venv/
 
-data/raw/
-data/interim/
-data/processed/
+# Data: ignore contents, keep the directory layout in git so a fresh
+# clone has somewhere to put downloads.
+data/**
+!data/**/
+!data/**/.gitkeep
+
+# Local credential files (never committed, never in an image)
+secrets/**
+!secrets/.gitkeep
 
 *.h5
 *.hdf5
@@ -285,3 +291,4 @@ data/processed/
 node_modules/
 dist/
 
+*.md

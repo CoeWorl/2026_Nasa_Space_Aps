@@ -1,0 +1,53 @@
+[project]
+name = "groundtruth"
+version = "0.1.0"
+description = "NISAR surface-change analysis"
+requires-python = ">=3.12,<3.13"
+
+# No version bounds on purpose: uv resolves a mutually compatible set
+# once, and uv.lock pins it exactly. For a 48-hour project, consistency
+# across machines matters more than chasing newer releases.
+#
+# Artifacts reach R2 through the Cloudflare Worker over plain HTTP
+# (stdlib urllib.request), so there is no boto3 and no S3 credential
+# handling in this container.
+dependencies = [
+    "numpy",
+    "scipy",
+    "rasterio",
+    "h5py",
+    "pyproj",
+    "shapely",
+    # Imported directly by models.py / regions.py.
+    "affine",
+    "earthaccess",
+    # Scientific configuration files (configs/*.yaml).
+    "pyyaml",
+    # CLI. The `groundtruth` command is the demo contract.
+    "typer",
+    # Settings validation and secret redaction, used by config.py.
+    "pydantic-settings",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[project.scripts]
+groundtruth = "groundtruth.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/groundtruth"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

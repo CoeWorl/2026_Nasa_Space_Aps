@@ -1,0 +1,55 @@
+# GROUNDTRUTH local development.
+#
+# One service for now: the Python scientific processor. The frontend and
+# the Cloudflare Worker are added in a later phase (see DOCKER_PLAN.md).
+#
+# Data is MOUNTED, never copied into the image: NISAR granules are
+# multi-gigabyte and must not enter the build context.
+
+name: groundtruth
+
+services:
+  processor:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: groundtruth-processor:dev
+
+    # Optional so that `docker compose` works on a fresh clone before
+    # anyone has run scripts/setup.sh.
+    env_file:
+      - path: .env
+        required: false
+
+    environment:
+      # Container-side paths. These win over anything in .env.
+      DATA_ROOT: /data
+      CONFIG_ROOT: /configs
+      EARTHDATA_NETRC_PATH: /run/secrets/earthdata_netrc
+      HOME: /tmp
+
+    # Run as the host user so files written into ./data stay owned by
+    # you on Linux. setup.sh fills these in from `id -u` / `id -g`.
+    user: "${DOCKER_UID:-10001}:${DOCKER_GID:-10001}"
+
+    volumes:
+      - ${HOST_DATA_DIR:-./data}:/data
+      - ${HOST_CONFIG_DIR:-./configs}:/configs:ro
+
+    secrets:
+      - earthdata_netrc
+
+    working_dir: /app
+
+    command: ["groundtruth", "--help"]
+
+    # The processor is a CLI, not a server. The profile keeps
+    # `docker compose up` from starting a container that exits at once.
+    profiles:
+      - tools
+
+secrets:
+  earthdata_netrc:
+    # Placeholder created by scripts/setup.sh. Replace with real
+    # Earthdata credentials before downloading granules.
+    file: ${EARTHDATA_NETRC_FILE:-./secrets/netrc}
