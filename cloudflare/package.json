@@ -1,0 +1,20 @@
+{
+  "name": "groundtruth-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker serving GROUNDTRUTH analysis artifacts from R2",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:remote": "wrangler dev --remote",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "seed:local": "./seed.sh",
+    "seed:remote": "./seed.sh --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261114.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.162.0"
+  }
+}

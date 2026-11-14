@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "groundtruth-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-14",
+
+  "observability": {
+    "enabled": true
+  },
+
+  "r2_buckets": [
+    {
+      "binding": "DATA",
+      "bucket_name": "groundtruth-dev"
+
+      // Add "remote": true to read the REAL bucket while the Worker runs
+      // locally under `wrangler dev`. It needs `wrangler login` first.
+      // Left off so local development works with no Cloudflare account:
+      // `wrangler dev` then uses a simulated R2 seeded by seed-local.sh.
+    }
+  ]
+}
