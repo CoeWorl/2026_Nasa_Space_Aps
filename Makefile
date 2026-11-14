@@ -8,7 +8,7 @@ COMPOSE  := docker compose --profile tools
 RUN      := $(COMPOSE) run --rm processor
 UV_IMAGE := ghcr.io/astral-sh/uv:0.12.1-python3.12-bookworm-slim
 
-.PHONY: help setup build info data selftest verify shell test lint lock survey inspect fetch clean-interim
+.PHONY: help setup build info data selftest verify shell test lint lock survey inspect fetch quicklook index serve clean-interim
 
 help:
 	@echo "GROUNDTRUTH"
@@ -27,6 +27,9 @@ help:
 	@echo "  make survey    list real NISAR granules over the study area (no login)"
 	@echo "  make inspect   open one granule by range reads, print its real HDF5 paths"
 	@echo "  make fetch DATE=2026-10-04   stream that date's AOI window to data/interim"
+	@echo "  make quicklook render data/interim GeoTIFFs to PNG and print dB stats"
+	@echo "  make index     write data/interim/index.json for upload to R2"
+	@echo "  make serve     serve the rasters and reference viewer on localhost:8080"
 	@echo "  make lock      regenerate backend/uv.lock after a dependency change"
 	@echo "  make clean-interim  delete scratch output in data/interim"
 
@@ -65,6 +68,30 @@ inspect: build
 DATE ?=
 POL  ?= HH
 BBOX ?= -74.03,40.70,-73.90,40.88
+# Write the artifact index as a file, for uploading to R2 alongside
+# the rasters. The local server synthesises the same JSON per request.
+index: build
+	$(COMPOSE) run --rm -v "$(CURDIR)/scripts:/scripts:ro" processor \
+		python /scripts/build_index.py
+
+# Serve the rasters and the reference viewer for local development.
+# Bound to 127.0.0.1 so it is not reachable from the network.
+SERVE_PORT ?= 8080
+serve: build
+	@echo "viewer:  http://localhost:$(SERVE_PORT)/"
+	@echo "rasters: http://localhost:$(SERVE_PORT)/data/index.json"
+	$(COMPOSE) run --rm \
+		-p "127.0.0.1:$(SERVE_PORT):$(SERVE_PORT)" \
+		-e SERVE_PORT="$(SERVE_PORT)" \
+		-v "$(CURDIR)/scripts:/scripts:ro" \
+		-v "$(CURDIR)/web:/web:ro" \
+		processor python /scripts/serve_data.py
+
+# Eyeball the rasters without QGIS or a browser.
+quicklook: build
+	$(COMPOSE) run --rm -v "$(CURDIR)/scripts:/scripts:ro" processor \
+		python /scripts/quicklook.py
+
 fetch: build
 	@test -n "$(DATE)" || { echo "usage: make fetch DATE=YYYY-MM-DD"; exit 2; }
 	$(RUN) groundtruth fetch-window \

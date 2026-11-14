@@ -60,6 +60,8 @@ expect a few minutes. Later builds are cached and take seconds.
 | `make survey` | List real NISAR granules over the study area (no login) |
 | `make inspect` | Open a granule by range reads, print its real HDF5 paths |
 | `make fetch DATE=2026-10-04` | Stream that date's AOI window to `data/interim` |
+| `make quicklook` | Render `data/interim` GeoTIFFs to PNG and print dB stats |
+| `make serve` | Serve the rasters and reference viewer on localhost:8080 |
 | `make lock` | Regenerate `backend/uv.lock` after a dependency change |
 
 Without `make`, every target is a plain Compose command:
@@ -102,6 +104,138 @@ read per granule rather than inferred from the collection name.
 Each fetch writes two files into `data/interim/`: the GeoTIFF, and a
 `.provenance.json` recording the granule id, acquisition time, track, frame,
 maturity, the exact variable read, the grid, and the validity rule applied.
+
+---
+
+## Looking at the data
+
+Three ways, in increasing order of effort.
+
+**PNG quicklook** needs nothing but Docker:
+
+```bash
+make quicklook
+```
+
+It writes a PNG beside each GeoTIFF and prints the decibel distribution.
+Over a city, water should sit near -24 dB and built-up areas above 0 dB; if
+that structure is missing, something upstream is wrong. Use it constantly -
+it catches flipped axes and broken masks that statistics hide.
+
+**QGIS or ArcGIS Pro**: drag `data/interim/*.tif` straight in. Both read COG
+with no plugin. Worth doing once deliberately, to confirm the raster lands on
+the real coastline rather than 5 m off it.
+
+**The browser**:
+
+```bash
+make serve     # then open http://localhost:8080/
+```
+
+`web/index.html` is a **reference viewer, not the application**. It exists to
+prove the contract the React app will be built against:
+
+- the float32 COG loads in a browser straight from HTTP
+- the dB stretch and colour ramp are right
+- clicking a pixel returns a real measurement, not a colour
+
+A browser cannot render float32 with NaN nodata natively. `geotiff.js` reads
+the actual values and the page builds the image itself, so measurements
+survive into the UI. Clicking issues an HTTP range request for that single
+pixel at full resolution, which is why the readout is the measurement rather
+than the colour of a downsampled texture. The two functions worth copying are
+`readRaster()` and `inspectAt()`.
+
+### Contract for the frontend
+
+| Property | Value |
+|---|---|
+| Format | Cloud Optimized GeoTIFF, tiled 512x512, DEFLATE |
+| CRS | EPSG:32618 (WGS 84 / UTM 18N) |
+| Data type | float32, `NaN` = nodata |
+| Quantity | linear intensity; display as `10 * log10(value)` |
+| Typical display range | -13 to +12 dB (2nd to 98th percentile) |
+| Served from | `/data/<name>.tif`, with `/data/index.json` listing what exists |
+
+`make serve` supports HTTP Range and sends CORS headers, so a Vite dev server
+on another port can read from it. It binds to 127.0.0.1 only, and serves just
+`web/` and `data/interim/` - never the repository root, which holds `.env` and
+`secrets/`.
+
+---
+
+## Cloudflare
+
+`cloudflare/` is a Worker that serves analysis artifacts from R2 with correct
+HTTP Range semantics. Range is the point: a Cloud Optimized GeoTIFF is only
+cloud optimized if the client can fetch single tiles. Without it, inspecting
+one pixel would pull eight megabytes.
+
+The Worker never decodes or reprojects a raster. It streams bytes. The science
+stays in the Python processor, which owns and tests it.
+
+### Local, with no Cloudflare account
+
+Wrangler simulates R2, so the whole path is testable before anyone logs in:
+
+```bash
+make index                     # write data/interim/index.json
+cd cloudflare && npm install
+./seed.sh                      # load artifacts into LOCAL simulated R2
+npx wrangler dev               # Worker on http://localhost:8787
+```
+
+Point the reference viewer at it:
+
+```
+http://localhost:8080/?api=http://localhost:8787
+```
+
+The viewer's reading code is identical either way. That is what makes the
+artifact contract, not the storage backend, the thing the frontend depends on.
+
+### Deployed
+
+Live at **https://groundtruth-api.groundtruth-api.workers.dev**
+
+```bash
+cd cloudflare
+npx wrangler login                          # once
+npx wrangler r2 bucket create groundtruth-dev
+./seed.sh --remote                          # upload artifacts
+npx wrangler deploy
+```
+
+R2 must be enabled on the account in the dashboard first, separately from the
+API token's r2 scope, or bucket creation fails with code 10042. After a first
+deploy the workers.dev certificate takes a couple of minutes; until it is
+issued, TLS fails while DNS already resolves.
+
+The viewer runs against it with:
+
+```
+http://localhost:8080/?api=https://groundtruth-api.groundtruth-api.workers.dev
+```
+
+The endpoint is public and unauthenticated, which suits NASA open data.
+
+### Verified behaviour
+
+| Check | Result |
+|---|---|
+| `HEAD` | 200, `Content-Length`, `Accept-Ranges: bytes`, `ETag` |
+| `Range: bytes=0-1023` | 206, `Content-Range: bytes 0-1023/8312627` |
+| `Range: bytes=-512` | 206, correct suffix window |
+| Unsatisfiable range | 416 with `Content-Range: bytes */<size>` |
+| `data/../secrets/netrc` | 404 |
+| Cross-origin from the viewer | CORS headers present, 206 responses |
+| Same pixel: local file, local R2, deployed R2 | `-5.92 dB`, linear `0.2559852600097656`, pixel 597,1552 |
+
+### Not built yet
+
+Queues, a Durable Object coordinator, and `POST /api/analyses` come after the
+change kernel exists. A Queue consumer is still a Worker with Worker CPU
+limits; it does not become a Python/GDAL environment by being asynchronous.
 
 ---
 
