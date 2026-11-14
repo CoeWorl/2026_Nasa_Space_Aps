@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GROUNDTRUTH raster check</title>
+
+<!--
+  A REFERENCE VIEWER, NOT THE APPLICATION.
+
+  It exists to prove three things against real data, so the React app can
+  be built against a known-good contract:
+
+    1. the float32 COG loads in a browser straight from HTTP
+    2. the colour ramp and dB stretch are right
+    3. clicking a pixel returns a real measurement, not a colour
+
+  The part worth copying is readRaster() and inspectAt(). Everything else
+  is scaffolding you should replace with your own components.
+
+  The COG is float32 with NaN nodata, which no browser renders natively.
+  geotiff.js reads the real values and we build the image ourselves, so
+  the measurements survive into the UI.
+-->
+
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+/>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --border: #2a313c;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Helvetica, Arial,
+      sans-serif;
+  }
+  #map { position: absolute; inset: 0; }
+
+  .panel {
+    position: absolute;
+    z-index: 2;
+    background: rgba(22, 27, 34, 0.94);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    backdrop-filter: blur(8px);
+  }
+  #controls { top: 12px; left: 12px; width: 330px; max-height: calc(100% - 24px); overflow: auto; }
+  #readout  { bottom: 12px; left: 12px; width: 330px; }
+
+  h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .01em; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  .warn {
+    font-size: 12px; color: #d29922; border-left: 2px solid #d29922;
+    padding-left: 8px; margin-bottom: 12px;
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  select, input[type=range] { width: 100%; }
+  select {
+    background: #0d1117; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font-size: 12px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td { padding: 2px 0; vertical-align: top; }
+  td:first-child { color: var(--muted); padding-right: 10px; white-space: nowrap; }
+  .value { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .big { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .unit { font-size: 13px; color: var(--muted); font-weight: 400; }
+  #legend { margin-top: 12px; }
+  #ramp { height: 10px; border-radius: 3px; border: 1px solid var(--border); }
+  .ticks { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .status { font-size: 12px; color: var(--muted); }
+  code { background: #0d1117; padding: 1px 4px; border-radius: 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="controls" class="panel">
+  <h1>GROUNDTRUTH raster check</h1>
+  <div class="sub">Reference viewer &mdash; not the application</div>
+  <div id="boot" class="status">Loading&hellip;</div>
+
+  <div id="ui" hidden>
+    <label for="layer">Layer</label>
+    <select id="layer"></select>
+
+    <label for="opacity">Opacity <span id="opacityValue">100%</span></label>
+    <input id="opacity" type="range" min="0" max="100" value="100" />
+
+    <div id="legend">
+      <div id="ramp"></div>
+      <div class="ticks"><span id="tickLow"></span><span id="tickMid"></span><span id="tickHigh"></span></div>
+    </div>
+
+    <table id="meta"></table>
+  </div>
+</div>
+
+<div id="readout" class="panel">
+  <div class="status" id="readoutHint">Click the raster to read a value.</div>
+  <div id="readoutBody" hidden>
+    <div><span class="big" id="readoutValue">&ndash;</span> <span class="unit" id="readoutUnit"></span></div>
+    <table id="readoutMeta"></table>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script>
+"use strict";
+
+// Cap the texture we build. The full window is ~1100x2000 here, but a
+// city-scale AOI can be far larger and we do not need every pixel to
+// draw a map image.
+const MAX_TEXTURE = 2048;
+// Percentile stretch. SAR has a long bright tail, so min/max would make
+// everything black.
+const STRETCH = [2, 98];
+
+// Where artifacts come from. Empty means same origin (the local
+// development server). Point it at the Cloudflare Worker with:
+//   http://localhost:8080/?api=http://localhost:8787
+//   http://localhost:8080/?api=https://groundtruth-api.<account>.workers.dev
+// The reading code below does not change between the two, which is the
+// whole point of keeping one artifact contract.
+const API_BASE = (new URLSearchParams(location.search).get("api") || "")
+  .replace(/\/$/, "");
+
+const state = { rasters: [], current: null };
+
+/* ---------- projection ------------------------------------------------ */
+
+// NISAR geocoded products use UTM. Deriving the proj4 string from the
+// EPSG code avoids shipping a projection database, and fails loudly
+// rather than silently mis-placing a raster.
+function projDefinition(epsg) {
+  if (epsg >= 32601 && epsg <= 32660) {
+    return `+proj=utm +zone=${epsg - 32600} +datum=WGS84 +units=m +no_defs`;
+  }
+  if (epsg >= 32701 && epsg <= 32760) {
+    return `+proj=utm +zone=${epsg - 32700} +south +datum=WGS84 +units=m +no_defs`;
+  }
+  if (epsg === 4326) return "+proj=longlat +datum=WGS84 +no_defs";
+  throw new Error(
+    `EPSG:${epsg} is not handled by this viewer. It knows WGS84 UTM only.`
+  );
+}
+
+/* ---------- colour ---------------------------------------------------- */
+
+// Sequential grey for an intensity-like quantity.
+function greyRamp(t) {
+  const v = Math.round(255 * t);
+  return [v, v, v];
+}
+
+// Diverging blue-white-red for a change layer, centred on zero. The
+// change kernel is not built yet; this is here so a dB-difference raster
+// renders correctly the moment it exists.
+function divergingRamp(t) {
+  const x = Math.max(0, Math.min(1, t));
+  if (x < 0.5) {
+    const k = x / 0.5;
+    return [Math.round(33 + k * 222), Math.round(102 + k * 153), Math.round(172 + k * 83)];
+  }
+  const k = (x - 0.5) / 0.5;
+  return [Math.round(255 - k * 77), Math.round(255 - k * 231), Math.round(255 - k * 217)];
+}
+
+function isDifference(entry) {
+  const q = (entry.quantity || "").toLowerCase();
+  return q.includes("change") || q.includes("ratio") || q.includes("_db");
+}
+
+/* ---------- statistics ------------------------------------------------ */
+
+function percentiles(values, ps) {
+  const finite = [];
+  // Sampling keeps this responsive on large rasters; the stretch does
+  // not need every pixel.
+  const step = Math.max(1, Math.floor(values.length / 500000));
+  for (let i = 0; i < values.length; i += step) {
+    const v = values[i];
+    if (Number.isFinite(v)) finite.push(v);
+  }
+  finite.sort((a, b) => a - b);
+  if (!finite.length) return ps.map(() => NaN);
+  return ps.map((p) => {
+    const idx = Math.min(finite.length - 1, Math.max(0, Math.round((p / 100) * (finite.length - 1))));
+    return finite[idx];
+  });
+}
+
+/* ---------- loading --------------------------------------------------- */
+
+// THIS is the part worth copying into the React app.
+async function readRaster(entry) {
+  const tiff = await GeoTIFF.fromUrl(`${API_BASE}${entry.url}`);
+  const image = await tiff.getImage();
+
+  const epsg = image.geoKeys && image.geoKeys.ProjectedCSTypeGeoKey;
+  if (!epsg) throw new Error(`${entry.name} has no projected CRS geokey`);
+  proj4.defs(`EPSG:${epsg}`, projDefinition(epsg));
+
+  const [minX, minY, maxX, maxY] = image.getBoundingBox();
+  const fullWidth = image.getWidth();
+  const fullHeight = image.getHeight();
+
+  const scale = Math.min(1, MAX_TEXTURE / Math.max(fullWidth, fullHeight));
+  const width = Math.max(1, Math.round(fullWidth * scale));
+  const height = Math.max(1, Math.round(fullHeight * scale));
+
+  const [raw] = await image.readRasters({ width, height, samples: [0] });
+
+  // Linear intensity becomes dB for display; a difference raster is
+  // already in dB and must not be logged again.
+  const difference = isDifference(entry);
+  const display = new Float32Array(raw.length);
+  for (let i = 0; i < raw.length; i++) {
+    const v = raw[i];
+    if (!Number.isFinite(v)) { display[i] = NaN; continue; }
+    if (difference) display[i] = v;
+    else display[i] = v > 0 ? 10 * Math.log10(v) : NaN;
+  }
+
+  let low, high;
+  if (difference) {
+    // Symmetric about zero, or the eye reads a bias that is not there.
+    const [p2, p98] = percentiles(display, STRETCH);
+    const bound = Math.max(Math.abs(p2), Math.abs(p98)) || 1;
+    low = -bound; high = bound;
+  } else {
+    [low, high] = percentiles(display, STRETCH);
+  }
+
+  const toLngLat = proj4(`EPSG:${epsg}`, "EPSG:4326");
+  return {
+    entry, image, epsg, difference,
+    fullWidth, fullHeight, width, height,
+    bbox: [minX, minY, maxX, maxY],
+    display, low, high,
+    corners: {
+      topLeft: toLngLat.forward([minX, maxY]),
+      topRight: toLngLat.forward([maxX, maxY]),
+      bottomRight: toLngLat.forward([maxX, minY]),
+      bottomLeft: toLngLat.forward([minX, minY]),
+    },
+  };
+}
+
+function toDataUrl(raster) {
+  const { width, height, display, low, high, difference } = raster;
+  const canvas = document.createElement("canvas");
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(width, height);
+  const span = high - low || 1;
+  const ramp = difference ? divergingRamp : greyRamp;
+
+  for (let i = 0; i < display.length; i++) {
+    const v = display[i];
+    const o = i * 4;
+    if (!Number.isFinite(v)) { img.data[o + 3] = 0; continue; }
+    const [r, g, b] = ramp((v - low) / span);
+    img.data[o] = r; img.data[o + 1] = g; img.data[o + 2] = b; img.data[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+/* ---------- click to inspect ------------------------------------------ */
+
+// Reads the ORIGINAL pixel at full resolution over an HTTP range
+// request, so the number shown is the measurement, not the colour that
+// was drawn from the downsampled texture.
+async function inspectAt(raster, lngLat) {
+  const toGrid = proj4("EPSG:4326", `EPSG:${raster.epsg}`);
+  const [x, y] = toGrid.forward([lngLat.lng, lngLat.lat]);
+  const [minX, minY, maxX, maxY] = raster.bbox;
+  if (x < minX || x > maxX || y < minY || y > maxY) return null;
+
+  const px = Math.min(raster.fullWidth - 1,
+    Math.floor(((x - minX) / (maxX - minX)) * raster.fullWidth));
+  const py = Math.min(raster.fullHeight - 1,
+    Math.floor(((maxY - y) / (maxY - minY)) * raster.fullHeight));
+
+  const [patch] = await raster.image.readRasters({
+    window: [px, py, px + 1, py + 1], samples: [0],
+  });
+  const value = patch[0];
+  if (!Number.isFinite(value)) return { px, py, x, y, value: null };
+
+  return {
+    px, py, x, y,
+    value,
+    decibels: raster.difference ? value : (value > 0 ? 10 * Math.log10(value) : null),
+  };
+}
+
+/* ---------- map ------------------------------------------------------- */
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: {
+    version: 8,
+    sources: {
+      osm: {
+        type: "raster",
+        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tileSize: 256,
+        attribution: "&copy; OpenStreetMap contributors",
+      },
+    },
+    layers: [
+      { id: "bg", type: "background", paint: { "background-color": "#0e1116" } },
+      { id: "osm", type: "raster", source: "osm", paint: { "raster-opacity": 0.55 } },
+    ],
+  },
+  center: [-73.97, 40.78],
+  zoom: 10.5,
+});
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
+
+// Created NOW, while the map definitely has not loaded yet. Building
+// this promise later deadlocks: `load` has already fired by then, so
+// `once("load")` never resolves, and `map.loaded()` reports false while
+// basemap tiles are still streaming.
+const mapReady = new Promise((resolve) => {
+  if (map.loaded()) resolve();
+  else map.once("load", resolve);
+});
+
+function addRasterLayer(raster) {
+  const id = `raster-${raster.entry.name}`;
+  if (map.getSource(id)) return id;
+  const c = raster.corners;
+  map.addSource(id, {
+    type: "image",
+    url: toDataUrl(raster),
+    coordinates: [c.topLeft, c.topRight, c.bottomRight, c.bottomLeft],
+  });
+  map.addLayer({
+    id, type: "raster", source: id,
+    paint: { "raster-opacity": 0, "raster-resampling": "nearest" },
+  });
+  return id;
+}
+
+function showLayer(name) {
+  const raster = state.rasters.find((r) => r.entry.name === name);
+  if (!raster) return;
+  state.current = raster;
+  const opacity = Number(document.getElementById("opacity").value) / 100;
+
+  for (const r of state.rasters) {
+    const id = `raster-${r.entry.name}`;
+    if (map.getLayer(id)) {
+      map.setPaintProperty(id, "raster-opacity", r === raster ? opacity : 0);
+    }
+  }
+  renderLegend(raster);
+  renderMeta(raster);
+}
+
+function renderLegend(raster) {
+  const stops = [];
+  const ramp = raster.difference ? divergingRamp : greyRamp;
+  for (let i = 0; i <= 10; i++) {
+    const [r, g, b] = ramp(i / 10);
+    stops.push(`rgb(${r},${g},${b}) ${i * 10}%`);
+  }
+  document.getElementById("ramp").style.background =
+    `linear-gradient(90deg, ${stops.join(", ")})`;
+  document.getElementById("tickLow").textContent = `${raster.low.toFixed(1)} dB`;
+  document.getElementById("tickMid").textContent =
+    `${((raster.low + raster.high) / 2).toFixed(1)}`;
+  document.getElementById("tickHigh").textContent = `${raster.high.toFixed(1)} dB`;
+}
+
+function renderMeta(raster) {
+  const e = raster.entry;
+  const rows = [
+    ["acquired", e.acquired_at ? e.acquired_at.replace("T", " ") : "unknown"],
+    ["track / frame", e.track && e.frame ? `${e.track} / ${e.frame}` : "unknown"],
+    ["maturity", e.maturity || "unknown"],
+    ["polarization", e.polarization || "unknown"],
+    ["quantity", e.quantity || "unknown"],
+    ["grid", `${raster.fullWidth} x ${raster.fullHeight} px, EPSG:${raster.epsg}`],
+    ["texture", `${raster.width} x ${raster.height} px`],
+  ];
+  document.getElementById("meta").innerHTML = rows
+    .map(([k, v]) => `<tr><td>${k}</td><td class="value">${v}</td></tr>`)
+    .join("");
+}
+
+map.on("click", async (event) => {
+  if (!state.current) return;
+  const hint = document.getElementById("readoutHint");
+  const body = document.getElementById("readoutBody");
+  hint.textContent = "Reading pixel…";
+  hint.hidden = false; body.hidden = true;
+
+  try {
+    const hit = await inspectAt(state.current, event.lngLat);
+    if (!hit) { hint.textContent = "Outside this raster."; return; }
+    if (hit.value === null) {
+      hint.textContent = `No valid measurement at pixel ${hit.px}, ${hit.py}.`;
+      return;
+    }
+    hint.hidden = true; body.hidden = false;
+    document.getElementById("readoutValue").textContent = hit.decibels.toFixed(2);
+    document.getElementById("readoutUnit").textContent =
+      state.current.difference ? "dB change" : "dB (backscatter)";
+    document.getElementById("readoutMeta").innerHTML = [
+      ["linear", hit.value.toExponential(3)],
+      ["pixel", `${hit.px}, ${hit.py}`],
+      ["easting / northing", `${hit.x.toFixed(0)}, ${hit.y.toFixed(0)}`],
+      ["lon / lat", `${event.lngLat.lng.toFixed(5)}, ${event.lngLat.lat.toFixed(5)}`],
+    ].map(([k, v]) => `<tr><td>${k}</td><td class="value">${v}</td></tr>`).join("");
+  } catch (err) {
+    hint.hidden = false; body.hidden = true;
+    hint.textContent = `Read failed: ${err.message}`;
+  }
+});
+
+document.getElementById("opacity").addEventListener("input", (event) => {
+  document.getElementById("opacityValue").textContent = `${event.target.value}%`;
+  if (state.current) {
+    map.setPaintProperty(
+      `raster-${state.current.entry.name}`,
+      "raster-opacity",
+      Number(event.target.value) / 100
+    );
+  }
+});
+
+document.getElementById("layer").addEventListener("change", (e) => showLayer(e.target.value));
+
+/* ---------- boot ------------------------------------------------------ */
+
+function fail(message, detail) {
+  const boot = document.getElementById("boot");
+  boot.innerHTML =
+    `<div class="warn"><strong>${message}</strong><br>${detail || ""}</div>`;
+}
+
+async function boot() {
+  const boot_ = document.getElementById("boot");
+  let index;
+  try {
+    const response = await fetch(`${API_BASE}/data/index.json`);
+    if (!response.ok) throw new Error(`index.json returned ${response.status}`);
+    index = await response.json();
+  } catch (err) {
+    return fail("Cannot reach the data server.", `${err.message}. Start it with <code>make serve</code>.`);
+  }
+
+  if (!index.rasters || !index.rasters.length) {
+    return fail("No rasters yet.", "Run <code>make fetch DATE=2026-10-04</code> then reload.");
+  }
+
+  const usable = index.rasters.filter((r) => r.name !== "selftest.tif");
+  const select = document.getElementById("layer");
+
+  for (const entry of usable) {
+    boot_.textContent = `Reading ${entry.name.slice(0, 40)}…`;
+    try {
+      const raster = await readRaster(entry);
+      state.rasters.push(raster);
+      await mapReady;
+      addRasterLayer(raster);
+      const option = document.createElement("option");
+      option.value = entry.name;
+      option.textContent = entry.acquired_at
+        ? `${entry.acquired_at.slice(0, 10)}  ${entry.polarization || ""}`.trim()
+        : entry.name.slice(0, 32);
+      select.appendChild(option);
+    } catch (err) {
+      console.error(entry.name, err);
+    }
+  }
+
+  if (!state.rasters.length) {
+    return fail("No raster could be read.", "See the browser console for details.");
+  }
+
+  boot_.hidden = true;
+  document.getElementById("ui").hidden = false;
+
+  const first = state.rasters[0];
+  select.value = first.entry.name;
+  showLayer(first.entry.name);
+
+  const c = first.corners;
+  map.fitBounds(
+    [
+      [Math.min(c.topLeft[0], c.bottomLeft[0]), Math.min(c.bottomLeft[1], c.bottomRight[1])],
+      [Math.max(c.topRight[0], c.bottomRight[0]), Math.max(c.topLeft[1], c.topRight[1])],
+    ],
+    { padding: 40, duration: 0 }
+  );
+}
+
+boot();
+</script>
+</body>
+</html>
