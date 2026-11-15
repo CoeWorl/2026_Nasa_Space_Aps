@@ -219,16 +219,17 @@ http://localhost:8080/?api=https://groundtruth-api.groundtruth-api.workers.dev
 
 The endpoint is public and unauthenticated, which suits NASA open data.
 
-### The atlas (temporal views)
+### The app (temporal views)
 
-`seed.sh` also uploads the data products and the atlas pages, so the Worker
+`seed.sh` also uploads the data products and the app pages, so the Worker
 serves the whole temporal app from one origin:
 
 | URL | Serves |
 |---|---|
-| `/finding.html` … `/context.html` | the eight atlas chapters, from R2 keys `app/<name>.html` |
-| `/atlas.css`, `/atlas.js` | the shared chrome and data layer |
-| `/explore.html` | the legacy one-pager, unchanged |
+| `/` and `/bay.html` | the baseline explorer: Discover, Explore, Compare, Evidence over one selection |
+| `/finding.html` … `/context.html` | the eight analysis chapters, from R2 keys `app/<name>.html` |
+| `/atlas.css`, `/atlas.js` | the chapters' shared chrome and data layer |
+| `/api` | the JSON endpoint list that used to live at `/` |
 | `/data-app/<name>.json` | a data product, aliased to R2 key `data/app/<name>` |
 
 The page routes are an allowlist in `src/index.ts`: a new page in `web/` has to
@@ -260,7 +261,7 @@ needed; pass `?data=<url>` only to point it at a different host. Locally,
 | `data/../secrets/netrc` | 404 |
 | Cross-origin from the viewer | CORS headers present, 206 responses |
 | Same pixel: local file, local R2, deployed R2 | `-5.92 dB`, linear `0.2559852600097656`, pixel 597,1552 |
-| `/explore.html` | 200 `text/html` from R2 |
+| `/` and `/bay.html` | 200 `text/html` from R2 |
 | `/data-app/models.json` | 200 `application/json`, descending slope `-0.914 dB/m` |
 | `/data-app/regions.geojson` | 200 `application/geo+json` |
 | `Range: bytes=0-99` on a product | 206 |

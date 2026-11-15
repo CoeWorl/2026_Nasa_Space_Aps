@@ -26,7 +26,7 @@ from pathlib import Path
 
 WEB_ROOT = Path(os.environ.get("WEB_ROOT", "/web")).resolve()
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data")).resolve() / "interim"
-# The small JSON/GeoJSON data products for explore.html, served read-only at
+# The small JSON/GeoJSON data products for the app pages, served read-only at
 # /data-app/. A third explicit root, for the same reason as the other two.
 APP_ROOT = (DATA_ROOT.parent / "processed" / "jamaica_bay" / "app").resolve()
 # SERVE_PORT is the repo's own name for it; PORT is what most launchers set.
@@ -214,9 +214,9 @@ def main() -> int:
             p.name for p in APP_ROOT.glob("*.geojson")
         )
         print(f"serving data products from {APP_ROOT} ({len(products)} file(s)) at /data-app/")
-        print(f"  explore.html -> http://127.0.0.1:{PORT}/explore.html")
+        print(f"  bay.html -> http://127.0.0.1:{PORT}/bay.html")
     else:
-        print(f"no data products at {APP_ROOT} yet (run tide_adjust.py) - explore.html will show an error")
+        print(f"no data products at {APP_ROOT} yet (run tide_adjust.py) - the app pages will show an error")
     print(f"serving rasters from {DATA_ROOT} ({len(rasters)} GeoTIFF(s))")
     for raster in rasters:
         print(f"  /data/{raster.name}")

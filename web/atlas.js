@@ -74,7 +74,7 @@ var ATLAS = (function () {
     history.replaceState(null, "", location.pathname + "?" + sharedParams().toString());
     var q = sharedParams().toString();
     document.querySelectorAll("nav.chapters a[data-file], .onward a[data-file]").forEach(function (a) {
-      a.href = a.dataset.file + (a.dataset.file === "explore.html" ? "" : "?" + q);
+      a.href = a.dataset.file + "?" + q;
     });
   }
   function hrefFor(file) { return file + "?" + sharedParams().toString(); }
@@ -231,11 +231,11 @@ var ATLAS = (function () {
       if (p.id === page) a.setAttribute("aria-current", "page");
       nav.appendChild(a);
     });
-    var legacy = h("a", "legacy", '<span class="n">—</span><span class="t">Legacy one-pager</span>');
-    legacy.dataset.file = "explore.html";
-    legacy.href = "explore.html";
-    legacy.title = "The original single-page explorer, kept unchanged";
-    nav.appendChild(legacy);
+    var app = h("a", "legacy", '<span class="n">—</span><span class="t">The explorer</span>');
+    app.dataset.file = "bay.html";
+    app.href = hrefFor("bay.html");
+    app.title = "Discover, Explore, Compare and Evidence over one selection";
+    nav.appendChild(app);
     mast.parentNode.insertBefore(nav, mast.nextSibling);
   }
 
@@ -254,7 +254,7 @@ var ATLAS = (function () {
     host.appendChild(h("div", "foot",
       "GROUNDTRUTH · NASA Space Apps · NISAR L2 GCOV, HH and HV · USGS 01311850 and 01311875 · " +
       "marsh polygons from OpenStreetMap · every figure is drawn from the exported products, which Python computed · " +
-      '<a href="explore.html">legacy one-pager</a>'));
+      '<a href="bay.html" data-file="bay.html">the explorer</a>'));
   }
 
   // --- reusable figures ------------------------------------------------------

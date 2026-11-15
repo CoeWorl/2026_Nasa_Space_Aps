@@ -38,9 +38,10 @@ const ALLOWED_SUFFIX = /\.(tif|tiff|json|geojson|png|csv)$/;
  * The atlas pages and their two shared assets, served from R2 so one origin
  * hosts page + data. An allowlist, not a prefix match: nothing under app/ is
  * reachable unless it is named here, and a page added to web/ has to be added
- * here too. "explore" is the legacy one-pager, kept so old links still work.
+ * here too. "bay" is the baseline explorer and is also what "/" serves.
  */
 const PAGES = [
+  "bay",
   "finding",
   "observe",
   "evidence",
@@ -49,7 +50,6 @@ const PAGES = [
   "marshes",
   "matched",
   "context",
-  "explore",
 ];
 const ASSETS = ["atlas.css", "atlas.js"];
 const ASSET_TYPES: Record<string, string> = {
@@ -133,16 +133,16 @@ export default {
       );
     }
 
-    if (url.pathname === "/") {
+    if (url.pathname === "/api") {
       return Response.json(
         {
           service: "groundtruth-api",
           endpoints: {
             health: "/health",
+            app: "/",
             index: "/data/index.json",
             artifact: "/data/<name>.tif",
-            atlas: "/finding.html",
-            legacy: "/explore.html",
+            chapters: "/finding.html",
             products: "/data-app/<name>.json",
           },
           notes: "Artifacts support HTTP Range; see Accept-Ranges.",
@@ -161,7 +161,8 @@ export default {
     // The atlas pages and their shared stylesheet and script, served from R2.
     // Their own fetches for /data-app/<file> are handled by the alias below,
     // so page and data come from one origin with no CORS and no ?data= needed.
-    const name = url.pathname.slice(1);
+    // "/" is the baseline explorer. Everything else resolves by name.
+    const name = url.pathname === "/" ? "bay.html" : url.pathname.slice(1);
     const bare = name.endsWith(".html") ? name.slice(0, -5) : name;
     const isPage = PAGES.includes(bare);
     const isAsset = ASSETS.includes(name);

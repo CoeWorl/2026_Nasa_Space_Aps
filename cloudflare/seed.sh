@@ -5,7 +5,7 @@
 #   ./seed.sh           -> LOCAL simulated R2 (no Cloudflare account needed)
 #   ./seed.sh --remote  -> the real bucket (needs `wrangler login` first)
 #
-# Each part is seeded only if its source exists, so the explore app can be
+# Each part is seeded only if its source exists, so the app can be
 # deployed without rasters, and rasters without the app. Idempotent:
 # re-running overwrites the same keys.
 
@@ -63,7 +63,7 @@ else
   echo ""
 fi
 
-# 2. Data products for explore.html (optional). Served at /data-app/<name>.
+# 2. Data products for the app pages (optional). Served at /data-app/<name>.
 if [ -d "$app_dir" ]; then
   echo "data products from $app_dir"
   for f in "$app_dir"/*.json "$app_dir"/*.geojson; do
@@ -82,8 +82,8 @@ else
 fi
 
 # 3. The atlas pages and their shared assets (optional). Served by the Worker
-# at /<name>, from R2 keys app/<name>. explore.html is the legacy one-pager and
-# is kept here so old links keep working.
+# at /<name>, from R2 keys app/<name>. bay.html is the baseline explorer and is
+# what the Worker serves at "/".
 if [ -d "$web_dir" ]; then
   echo "pages from $web_dir"
   for f in "$web_dir"/*.html "$web_dir"/atlas.css "$web_dir"/atlas.js; do
