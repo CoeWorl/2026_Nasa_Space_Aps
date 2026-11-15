@@ -211,13 +211,36 @@ API token's r2 scope, or bucket creation fails with code 10042. After a first
 deploy the workers.dev certificate takes a couple of minutes; until it is
 issued, TLS fails while DNS already resolves.
 
-The viewer runs against it with:
+The raster viewer runs against it with:
 
 ```
 http://localhost:8080/?api=https://groundtruth-api.groundtruth-api.workers.dev
 ```
 
 The endpoint is public and unauthenticated, which suits NASA open data.
+
+### The explore app (temporal views)
+
+`seed.sh` also uploads the data products and the `explore.html` page, so the
+Worker serves the whole temporal app from one origin:
+
+| URL | Serves |
+|---|---|
+| `/explore.html` | the page, from R2 key `app/explore.html` |
+| `/data-app/<name>.json` | a data product, aliased to R2 key `data/app/<name>` |
+
+The products come from `tide_adjust.py`; regenerate and reseed with:
+
+```bash
+uv run --project backend python -u backend/scripts/tide_adjust.py --out-dir data/processed/jamaica_bay/app
+cd cloudflare && ./seed.sh --remote        # or ./seed.sh for local simulated R2
+npx wrangler deploy                        # or npx wrangler dev
+```
+
+Then open `https://groundtruth-api.groundtruth-api.workers.dev/explore.html`.
+The page defaults to a same-origin `./data-app/` base, so no query string is
+needed; pass `?data=<url>` only to point it at a different host. Locally,
+`make serve` serves the same page at `http://localhost:8080/explore.html`.
 
 ### Verified behaviour
 
@@ -230,6 +253,11 @@ The endpoint is public and unauthenticated, which suits NASA open data.
 | `data/../secrets/netrc` | 404 |
 | Cross-origin from the viewer | CORS headers present, 206 responses |
 | Same pixel: local file, local R2, deployed R2 | `-5.92 dB`, linear `0.2559852600097656`, pixel 597,1552 |
+| `/explore.html` | 200 `text/html` from R2 |
+| `/data-app/models.json` | 200 `application/json`, descending slope `-0.914 dB/m` |
+| `/data-app/regions.geojson` | 200 `application/geo+json` |
+| `Range: bytes=0-99` on a product | 206 |
+| `/data-app/../../secrets/netrc`, missing key | 404 |
 
 ### Not built yet
 

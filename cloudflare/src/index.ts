@@ -32,7 +32,10 @@ const CORS: Record<string, string> = {
 
 /** Only these keys are reachable. Never expose arbitrary R2 keys. */
 const KEY_PATTERN = /^(data|results)\/[A-Za-z0-9._/-]+$/;
-const ALLOWED_SUFFIX = /\.(tif|tiff|json|geojson|png)$/;
+const ALLOWED_SUFFIX = /\.(tif|tiff|json|geojson|png|csv)$/;
+
+/** The explore.html page, served from R2 so one origin hosts page + data. */
+const PAGE_KEY = "app/explore.html";
 
 const CONTENT_TYPES: Record<string, string> = {
   tif: "image/tiff",
@@ -40,6 +43,8 @@ const CONTENT_TYPES: Record<string, string> = {
   json: "application/json; charset=utf-8",
   geojson: "application/geo+json",
   png: "image/png",
+  csv: "text/csv; charset=utf-8",
+  html: "text/html; charset=utf-8",
 };
 
 /**
@@ -116,6 +121,8 @@ export default {
             health: "/health",
             index: "/data/index.json",
             artifact: "/data/<name>.tif",
+            explore: "/explore.html",
+            products: "/data-app/<name>.json",
           },
           notes: "Artifacts support HTTP Range; see Accept-Ranges.",
         },
@@ -130,11 +137,37 @@ export default {
       });
     }
 
+    // The explore page itself, served from R2 as text/html. Its own fetches
+    // for /data-app/<file> are handled by the alias below, so page and data
+    // come from one origin with no CORS and no ?data= needed.
+    if (url.pathname === "/explore" || url.pathname === "/explore.html") {
+      const page = await env.DATA.head(PAGE_KEY);
+      if (!page) return plain(404, "explore.html not seeded; run seed.sh");
+      const headers = new Headers(CORS);
+      page.writeHttpMetadata(headers);
+      headers.set("Content-Type", "text/html; charset=utf-8");
+      headers.set("ETag", page.httpEtag);
+      headers.set("Cache-Control", "public, max-age=60");
+      headers.set("Content-Length", String(page.size));
+      if (request.method === "HEAD") {
+        return new Response(null, { status: 200, headers });
+      }
+      const body = await env.DATA.get(PAGE_KEY);
+      if (!body) return plain(404, "Not found");
+      return new Response(body.body, { status: 200, headers });
+    }
+
     let key: string;
     try {
       key = decodeURIComponent(url.pathname.slice(1));
     } catch {
       return plain(400, "Invalid path");
+    }
+
+    // Alias: /data-app/<file> -> R2 key data/app/<file>. Keeps one data base
+    // (./data-app/) working whether the page is served by `make serve` or here.
+    if (key.startsWith("data-app/")) {
+      key = "data/app/" + key.slice("data-app/".length);
     }
 
     if (
