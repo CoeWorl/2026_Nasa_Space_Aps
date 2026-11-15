@@ -26,6 +26,9 @@ from pathlib import Path
 
 WEB_ROOT = Path(os.environ.get("WEB_ROOT", "/web")).resolve()
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data")).resolve() / "interim"
+# The small JSON/GeoJSON data products for explore.html, served read-only at
+# /data-app/. A third explicit root, for the same reason as the other two.
+APP_ROOT = (DATA_ROOT.parent / "processed" / "jamaica_bay" / "app").resolve()
 PORT = int(os.environ.get("SERVE_PORT", "8080"))
 
 CONTENT_TYPES = {
@@ -33,12 +36,15 @@ CONTENT_TYPES = {
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".json": "application/json; charset=utf-8",
+    ".geojson": "application/geo+json; charset=utf-8",
     ".tif": "image/tiff",
     ".png": "image/png",
     ".svg": "image/svg+xml",
 }
 # Only these are servable from the data root.
 DATA_SUFFIXES = {".tif", ".json", ".png"}
+# Only these are servable from the app-products root.
+APP_SUFFIXES = {".json", ".geojson"}
 
 RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
@@ -58,6 +64,15 @@ class Handler(BaseHTTPRequestHandler):
 
         if path in ("/", "/index.html"):
             return WEB_ROOT / "index.html", None
+
+        if path.startswith("/data-app/"):
+            name = path[len("/data-app/") :]
+            candidate = (APP_ROOT / name).resolve()
+            if APP_ROOT not in candidate.parents:
+                return None, None
+            if candidate.suffix.lower() not in APP_SUFFIXES:
+                return None, None
+            return candidate, None
 
         if path == "/data/index.json":
             return None, self.build_index()
@@ -193,6 +208,14 @@ def main() -> int:
 
     rasters = sorted(DATA_ROOT.glob("*.tif"))
     print(f"serving viewer from {WEB_ROOT}")
+    if APP_ROOT.is_dir():
+        products = sorted(p.name for p in APP_ROOT.glob("*.json")) + sorted(
+            p.name for p in APP_ROOT.glob("*.geojson")
+        )
+        print(f"serving data products from {APP_ROOT} ({len(products)} file(s)) at /data-app/")
+        print(f"  explore.html -> http://127.0.0.1:{PORT}/explore.html")
+    else:
+        print(f"no data products at {APP_ROOT} yet (run tide_adjust.py) - explore.html will show an error")
     print(f"serving rasters from {DATA_ROOT} ({len(rasters)} GeoTIFF(s))")
     for raster in rasters:
         print(f"  /data/{raster.name}")
@@ -202,7 +225,9 @@ def main() -> int:
     print(f"open http://localhost:{PORT}/")
     print("press ctrl-c to stop")
 
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    # 0.0.0.0 inside the container (the Makefile publishes it on 127.0.0.1 only);
+    # set SERVE_BIND=127.0.0.1 when running on the host directly.
+    server = ThreadingHTTPServer((os.environ.get("SERVE_BIND", "0.0.0.0"), PORT), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
