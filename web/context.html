@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GROUNDTRUTH 08 — Restoration context</title>
+<link rel="stylesheet" href="atlas.css" />
+</head>
+<body>
+<div class="page">
+  <header class="mast">
+    <div id="locator" aria-hidden="true"></div>
+    <div>
+      <p class="kicker">Groundtruth / Jamaica Bay / 08</p>
+      <h1>Could tide adjustment improve restoration monitoring?</h1>
+      <p class="deck">Context only: where a tide-aware comparison could later be tested, and what it would take.</p>
+    </div>
+  </header>
+  <div id="app"></div>
+</div>
+<script src="atlas.js"></script>
+<script>
+"use strict";
+ATLAS.boot("context", function (ctx) {
+  var A = ATLAS, host = ctx.host, P = A.PROJECTS, M = A.MODELS;
+
+  // The strongest limitation belongs where it will be read, not in a footer.
+  host.appendChild(A.h("div", "callout",
+    "<b>Context only.</b> The radar analysis on chapters 01 to 07 does not evaluate any restoration project listed " +
+    "on this page. No project boundary is held, no radar statistic is computed per project, and no project appears " +
+    "in any model. These sites are listed to identify <b>where a future tide-aware study could be run</b>, and to " +
+    "be honest about the gap between what was measured and what people want to know."));
+
+  host.appendChild(A.h("p", "lede",
+    "Dredging, filling and marsh loss reshaped Jamaica Bay over a century, and they are documented by independent " +
+    "research, not by this radar analysis. The question this work can speak to is narrower and more useful than " +
+    "\"is restoration working?\": <b>can two radar acquisitions of the same marsh, taken at different points in the " +
+    "tidal cycle, be made comparable to each other?</b> Chapters 05 and 07 say partly, and measurably so. " +
+    "That is a precondition for monitoring, not a monitoring result."));
+
+  // --- what a future study would need --------------------------------------
+  var s1 = A.h("section");
+  host.appendChild(s1);
+  s1.appendChild(A.h("h2", null, "What a future study would actually have to measure"));
+  s1.appendChild(A.h("p", "prose",
+    "\"Restoration success\" is not one outcome, and an adjusted backscatter series is not yet a validated proxy " +
+    "for any of them. Each row below is a different question, with the outcome it needs and the data this project " +
+    "does not have."));
+  var t = A.h("table", "num-table");
+  t.innerHTML =
+    "<thead><tr><th>Question</th><th>Outcome that would answer it</th><th>What is still missing</th></tr></thead><tbody>" +
+    rowf("Did marsh extent increase?", "Classified marsh area through time",
+      "Validated land-cover labels and project boundaries; OpenStreetMap polygons are fixed, not updated") +
+    rowf("Did inundation behaviour change?", "Tide-conditioned inundation response per site",
+      "Marsh-surface elevation and a hydrodynamic model; water level at one gauge pair is not water level everywhere") +
+    rowf("Did vegetation structure change?", "A calibrated radar or optical vegetation metric",
+      "Field biomass or canopy observations to calibrate against; more than one year, to separate season from trend") +
+    rowf("Did a project cause an improvement?", "A pre-specified ecological outcome, treated and comparison sites",
+      "Project footprints and dates, untreated comparison marshes, and observations before the work began") +
+    "</tbody>";
+  s1.appendChild(t);
+  function rowf(a, b, c) {
+    return "<tr><td style=\"font-family:var(--serif);font-size:14px\">" + a +
+      "</td><td style=\"text-align:left;font-family:var(--sans);white-space:normal\">" + b +
+      "</td><td style=\"text-align:left;font-family:var(--sans);white-space:normal;color:var(--muted)\">" + c + "</td></tr>";
+  }
+  s1.appendChild(A.h("p", "prose",
+    "What this work does provide for all four is the same thing: a way to stop the tide from masquerading as " +
+    "change. On a descending acquisition, a <span class=\"num\">0.5</span> m difference in water level alone moves " +
+    "the bay-wide marsh return by about <span class=\"num\">" +
+    A.fx(Math.abs(M.tracks.descending_069.series.all_dates.regression.slope_db_per_m) * 0.5) +
+    "</span> dB — comparable to the step sizes anyone would hope to detect. Comparing acquisitions without " +
+    "accounting for that is the failure mode this project is about."));
+
+  // --- the timeline ----------------------------------------------------------
+  if (P) {
+    var s2 = A.h("section");
+    host.appendChild(s2);
+    s2.appendChild(A.h("h2", null, "None of these projects overlaps the record in a usable way"));
+    s2.appendChild(A.h("p", "prose",
+      "The acquisitions run from <b>" + A.PTS.descending_069[0].date + "</b> to <b>" +
+      A.PTS.descending_069[A.PTS.descending_069.length - 1].date + "</b>. Each project's status below is plotted at " +
+      "the date that status was evidence for. A project completed before the first acquisition offers no " +
+      "before-and-after contrast in this record; one still being designed offers nothing to observe yet."));
+    drawTimeline(s2, P);
+  }
+
+  // --- the project table -------------------------------------------------------
+  var s3 = A.h("section");
+  host.appendChild(s3);
+  s3.appendChild(A.h("h2", null, "The projects, with their provenance"));
+  if (P) {
+    var tbl = A.h("table", "ctx");
+    tbl.innerHTML = P.features.map(function (f) {
+      var p = f.properties;
+      return "<tr><td>" + p.project_name + '<span class="status">' + p.published_status + " · as of " + p.status_as_of + "</span></td>" +
+        "<td>" + (p.restoration_goal || "") + " " + (p.construction_notes || "") +
+        ' <a href="' + p.source_url + '" target="_blank" rel="noopener">Source</a>' +
+        '<span class="status">' + p.agency + " · " + p.geometry_kind + " · " + p.verification + "</span></td></tr>";
+    }).join("");
+    s3.appendChild(tbl);
+    s3.appendChild(A.h("p", "cap",
+      "Statuses are evidence as of their date and projects move. Locations are OpenStreetMap place locators for the " +
+      "named park or creek — <b>not</b> project footprints. Where a source could not be confirmed, the row says " +
+      "\"partly verified\" rather than quietly rounding up."));
+    s3.appendChild(A.h("div", "evidence",
+      '<span class="tier context">context</span><b>proposed</b> use · nothing on this page is measured by the ' +
+      "radar · no project boundaries held · each status is evidence as of its own date, from the linked source"));
+  } else {
+    s3.appendChild(A.h("p", "cap", "restoration_projects.geojson not found."));
+  }
+
+  // --- the full limitations ------------------------------------------------------
+  var s4 = A.h("section");
+  host.appendChild(s4);
+  s4.appendChild(A.h("h2", null, "What this project does not show"));
+  s4.appendChild(A.h("p", "limits",
+    "The negative slope is a <b>measured association</b> between observed water level and marsh-relative " +
+    "backscatter. It is not a measurement of marsh loss, elevation change, flood protection or restoration success, " +
+    "and it does not identify the physical scattering mechanism behind the association."));
+  s4.appendChild(A.h("p", "limits",
+    "Ascending and descending passes are never pooled except in the single model on chapter 01 that is labelled a " +
+    "diagnostic. Marsh polygons come from OpenStreetMap, not the National Wetlands Inventory, and the upland " +
+    "reference is a brightness proxy rather than a landcover class. Water level is the mean of two gauges that " +
+    "disagree by a median of " + (A.ROBUST ? A.fx(A.ROBUST.gauges.median_abs_difference_m) + " m" : "a measurable amount") +
+    "; wind and rain are daily values, not values at the overpass. Residuals carry real serial correlation, so " +
+    "classical intervals are optimistic and the held-out test on chapter 05 is the stronger evidence."));
+  s4.appendChild(A.h("p", "limits",
+    "The coverage screen was chosen after an outlier was seen, which chapter 04 addresses by sweeping every " +
+    "threshold rather than defending one. Per-polygon results are exploratory: the count of negative slopes is not " +
+    "significant under a dependence-preserving null, and only the pooled mean is claimed. The trend term is not " +
+    "distinguishable from zero and is not separable from seasonality with about one year of data."));
+  s4.appendChild(A.h("p", "limits",
+    "The record is one year, one bay, one instrument and two gauges. Everything here should be read as a " +
+    "demonstration that the method is worth extending, not as a finished monitoring product."));
+  s4.appendChild(A.h("div", "evidence",
+    '<span class="tier primary">primary</span>the limits above are the same ones stated on each chapter, collected · ' +
+    "every figure on this site is drawn from the exported data products; the science is in Python, under " +
+    "<span class=\"mono\">backend/scripts/</span>"));
+
+  function drawTimeline(hostEl, P) {
+    var feats = P.features.slice();
+    var dates = feats.map(function (f) { return Date.parse(f.properties.status_as_of + "T00:00:00Z"); });
+    var obs = A.PTS.descending_069.concat(A.PTS.ascending_133).map(function (p) { return p.t; });
+    var lo = Math.min.apply(null, dates.concat(obs)), hi = Math.max.apply(null, dates.concat(obs));
+    var span = (hi - lo) * 0.06;
+    var W = 1120, rowH = 30, Pd = { l: 300, r: 30, t: 44, b: 34 };
+    var H = Pd.t + feats.length * rowH + Pd.b;
+    var x = A.scale(lo - span, hi + span, Pd.l, W - Pd.r);
+    var svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Project statuses against the acquisition record" });
+    // The observation window, as a band behind everything.
+    var o0 = Math.min.apply(null, obs), o1 = Math.max.apply(null, obs);
+    svg.appendChild(A.el("rect", { x: x(o0), y: Pd.t - 22, width: x(o1) - x(o0), height: H - Pd.b - Pd.t + 22, fill: A.ORBITS.descending_069.color, "fill-opacity": 0.1 }));
+    svg.appendChild(A.el("text", { x: (x(o0) + x(o1)) / 2, y: Pd.t - 27, "text-anchor": "middle", class: "lab", style: "font-size:11px;font-weight:600" }, "the NISAR record used here"));
+    obs.forEach(function (t) {
+      svg.appendChild(A.el("line", { x1: x(t), x2: x(t), y1: Pd.t - 22, y2: Pd.t - 12, stroke: A.ORBITS.descending_069.color, "stroke-opacity": 0.5 }));
+    });
+    A.monthTicks(lo - span, hi + span).forEach(function (t) {
+      svg.appendChild(A.el("line", { x1: x(t), x2: x(t), y1: Pd.t - 10, y2: H - Pd.b, stroke: A.RULE }));
+      svg.appendChild(A.el("text", { x: x(t), y: H - Pd.b + 15, "text-anchor": "middle", class: "labm", style: "font-size:10px;fill:" + A.MUTED }, A.monthFmt(t)));
+    });
+    feats.forEach(function (f, i) {
+      var p = f.properties, cy = Pd.t + i * rowH + rowH / 2, t = Date.parse(p.status_as_of + "T00:00:00Z");
+      var done = /completed/i.test(p.published_status);
+      var paused = /paused|designing|announced/i.test(p.published_status);
+      svg.appendChild(A.el("text", { x: Pd.l - 12, y: cy + 4, "text-anchor": "end", class: "lab", style: "font-size:11.5px" }, p.project_name));
+      svg.appendChild(A.el("line", { x1: Pd.l, x2: W - Pd.r, y1: cy + 12, y2: cy + 12, stroke: A.RULE }));
+      var mark = done
+        ? A.el("path", { d: "M" + x(t) + " " + (cy - 5) + "l5 5l-5 5l-5 -5z", fill: A.MARSH, stroke: A.INK, "stroke-width": 1 })
+        : A.el("circle", { cx: x(t), cy: cy, r: 4.6, fill: paused ? A.PAPER : A.WARN, stroke: A.INK, "stroke-width": 1.2 });
+      svg.appendChild(mark);
+      svg.appendChild(A.el("text", { x: x(t) + 10, y: cy + 4, class: "axl", style: "font-size:10.5px" }, p.published_status + " (" + p.status_as_of + ")"));
+      svg.appendChild(A.el("title", {}, p.project_name + "\n" + p.published_status + " as of " + p.status_as_of + "\n" + p.geometry_kind));
+    });
+    hostEl.appendChild(svg);
+    hostEl.appendChild(A.h("p", "cap",
+      "A filled diamond is a completed project, a filled circle is work under way, a hollow circle is designing, " +
+      "paused or merely announced. The blue band and ticks are the acquisitions this project used. " +
+      "<b>One project was already complete before the first acquisition</b>, so this record holds no \"before\" for " +
+      "it. <b>One had a construction contract awarded shortly before the record began</b>, with no confirmed start " +
+      "date, which is the only site where the acquisitions might straddle any work at all — and without a project " +
+      "footprint there is nothing to measure it over. The remainder were still being designed, paused or merely " +
+      "announced throughout. That is why the restoration material here is context and not evidence."));
+    hostEl.appendChild(A.h("div", "evidence",
+      '<span class="tier context">context</span><b>measured</b> acquisition dates · <b>reported</b> project ' +
+      "statuses, each from its linked source on its own date · positions on the time axis are status dates, not construction schedules"));
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GROUNDTRUTH 05 — Held out</title>
+<link rel="stylesheet" href="atlas.css" />
+</head>
+<body>
+<div class="page">
+  <header class="mast">
+    <div id="locator" aria-hidden="true"></div>
+    <div>
+      <p class="kicker">Groundtruth / Jamaica Bay / 05</p>
+      <h1>What is left when the tide is taken out</h1>
+      <p class="deck">A correction fitted on early dates, judged only on dates it never saw.</p>
+    </div>
+  </header>
+  <div id="app"></div>
+</div>
+<script src="atlas.js"></script>
+<script>
+"use strict";
+(function () {
+  // "prospective" is the line the held-out numbers were actually computed
+  // from. "descriptive" is the all-dates correction, which is in-sample on
+  // every date and therefore cannot be scored.
+  var view = { mode: "prospective" };
+
+  ATLAS.boot("holdout", function (ctx) {
+    var A = ATLAS, host = ctx.host;
+    var orbit = A.state.orbit, o = A.ORBITS[orbit];
+    var m = A.model(orbit), ta = m.tide_adjustment, pd = m.per_date;
+    var ho = ta.held_out, bh = m.benchmark.chronological_half, br = m.benchmark.rolling_origin;
+
+    host.appendChild(A.h("p", "lede",
+      "A relationship that only describes the dates it was fitted on is a curve-fitting exercise. The test that " +
+      "matters is prospective: estimate the slope on the earlier half of the record, then use it, frozen, on later " +
+      "dates the model has never seen. If water level really carries information about the radar return, the " +
+      "corrected series on those unseen dates should be <b>measurably less variable and more predictable</b> — not " +
+      "merely smoother-looking."));
+
+    var ctl = A.h("div", "ctl");
+    ctl.innerHTML =
+      '<span class="ctl-label">Track</span><span class="seg" id="tk">' +
+        Object.keys(A.ORBITS).map(function (k) {
+          return '<button data-v="' + k + '" aria-pressed="' + (k === orbit) + '">' + A.ORBITS[k].label + "</button>";
+        }).join("") + "</span>" +
+      '<span class="ctl-label">Correction shown</span><span class="seg" id="md">' +
+        '<button data-v="prospective" aria-pressed="' + (view.mode === "prospective") + '" title="The held-out dates are corrected with the slope fitted on the training dates only. This is the series the quoted held-out statistics were computed from.">Prospective (training β)</button>' +
+        '<button data-v="descriptive" aria-pressed="' + (view.mode === "descriptive") + '" title="Every date corrected with the slope fitted on all dates. In-sample everywhere, so it cannot be scored — it is a description, not a test.">Descriptive (all-dates β)</button>' +
+        '<button data-v="both" aria-pressed="' + (view.mode === "both") + '">Both</button></span>';
+    host.appendChild(ctl);
+    ctl.querySelector("#tk").onclick = function (e) {
+      var b = e.target.closest("button");
+      if (b && b.dataset.v !== orbit) A.select(A.fitPoints(b.dataset.v)[0].id);
+    };
+    ctl.querySelector("#md").onclick = function (e) { var b = e.target.closest("button"); if (b) { view.mode = b.dataset.v; A.redraw(); } };
+
+    drawSeries(host, m, pd, ta, o);
+
+    // --- the headline numbers, defined -----------------------------------------
+    var s2 = A.h("section");
+    host.appendChild(s2);
+    s2.appendChild(A.h("h2", null, "The held-out numbers, and exactly what they mean"));
+    s2.appendChild(A.h("p", "prose",
+      "On the <b>" + ho.n + " held-out acquisitions</b>, the " +
+      A.def("standard deviation", "Standard deviation in dB with ddof = 1, over the held-out dates only. This is what \"spread\" means on these pages.") +
+      " of marsh-relative backscatter fell from <span class=\"num\">" + A.fx(ho.raw.sd_db) + "</span> to " +
+      "<span class=\"num\">" + A.fx(ho.adjusted.sd_db) + "</span> dB after applying the training-period correction, " +
+      "a <span class=\"num\">" + A.pct(ta.sd_reduction) + "</span> reduction. The median absolute deviation fell " +
+      "from " + A.fx(ho.raw.mad_db) + " to " + A.fx(ho.adjusted.mad_db) + " dB, so this is not one outlier being tamed."));
+
+    var t = A.h("table", "num-table");
+    t.innerHTML =
+      "<thead><tr><th>Model</th><th>RMSE (dB)</th><th>MAE (dB)</th><th>vs constant</th>" +
+      "<th>RMSE (dB)</th><th>MAE (dB)</th><th>vs constant</th></tr></thead><tbody>" +
+      '<tr><td></td><td colspan="3" style="text-align:center;color:var(--muted);border-top:0">chronological half · ' +
+        bh.n_test_predictions + " test dates</td>" +
+      '<td colspan="3" style="text-align:center;color:var(--muted);border-top:0">rolling origin · ' +
+        br.n_test_predictions + " one-step forecasts</td></tr>" +
+      row("Constant (training mean)", bh.constant, br.constant, false) +
+      row("Seasonal (annual sine + cosine)", bh.seasonal, br.seasonal, false) +
+      row("Water level", bh.tide, br.tide, true) +
+      "</tbody>";
+    s2.appendChild(t);
+    function row(name, a, b, hi) {
+      function cells(s) {
+        return "<td>" + A.fx(s.rmse_db) + "</td><td>" + A.fx(s.mae_db) + "</td><td>" +
+          (s.rmse_improvement_vs_constant == null ? "—" : A.pct(s.rmse_improvement_vs_constant)) + "</td>";
+      }
+      return '<tr class="' + (hi ? "hi" : "") + '"><td>' + name + "</td>" + cells(a) + cells(b) + "</tr>";
+    }
+    s2.appendChild(A.h("p", "prose",
+      "<b>The two baselines, exactly.</b> The <i>constant</i> predicts every test date with the mean of the training " +
+      "dates — the strongest model that uses no information about the date at all. The <i>seasonal</i> model is " +
+      "<span class=\"mono\">Y = α + a·sin(2πd/365) + b·cos(2πd/365)</span> on day of year <span class=\"mono\">d</span>: " +
+      "three parameters, fitted on exactly the same training dates and scored on exactly the same test dates. " +
+      "It does <b>worse than the constant</b> on both splits — with " + m.n + " acquisitions spanning about one " +
+      "year, a seasonal cycle is not identifiable, and fitting one costs accuracy. Under the " +
+      A.def("rolling origin", "Fit on dates 1..k, predict date k+1, step forward, with at least " + (br.min_train || 10) + " training dates. Every model is refitted at every origin, and all three are scored on the same forecast dates.") +
+      " every model is refitted at each step, so the comparison is paired date by date."));
+    s2.appendChild(A.h("div", "evidence",
+      '<span class="tier primary">primary</span><b>modelled</b> · RMSE and MAE in dB · identical training and test ' +
+      "dates for all three models · improvement is 1 − RMSE_model ÷ RMSE_constant · with " + bh.n_test_predictions +
+      " test dates these differences carry real sampling uncertainty, so read the sign and the size, not the third digit"));
+
+    // --- the correction is partial ---------------------------------------------
+    var s3 = A.h("section");
+    host.appendChild(s3);
+    s3.appendChild(A.h("h2", null, "The correction is real, and it is partial"));
+    s3.appendChild(A.h("p", "prose",
+      "On the held-out dates, backscatter <b>after</b> applying the training-period correction still correlates with " +
+      "observed water level at <span class=\"num\">" + A.fx(ho.adjusted.r_with_water_level) + "</span> " +
+      "(p = " + A.pv(ho.adjusted.p) + "), against <span class=\"num\">" + A.fx(ho.raw.r_with_water_level) + "</span> " +
+      "before it. That residual correlation is informative precisely because these are held-out dates: an in-sample " +
+      "least-squares residual is orthogonal to its predictor by construction and would always read zero" +
+      (ta.in_sample_descriptive ? " — as the descriptive fit does, at " + A.fx(ta.in_sample_descriptive.adjusted.r_with_water_level) + "" : "") +
+      ". So a single linear slope, frozen in time, removes most but not all of the tide signal. " +
+      "A slope that drifts with season or vegetation state would do better, and these data cannot fit one."));
+
+    if (ta.injected_step && ta.injected_step.results) {
+      s3.appendChild(A.h("h3", null, "Could the correction hide a real change?"));
+      s3.appendChild(A.h("p", "prose",
+        "A tide correction that also absorbs genuine change would be worse than useless for monitoring. Steps of " +
+        "known size were injected into the last " + ta.injected_step.window_dates.length + " acquisitions and the " +
+        "correction re-applied. With the slope frozen, recovery is exact by construction; the informative column is " +
+        "what happens when the slope is <b>refitted</b> on the contaminated series, which is what an automated " +
+        "pipeline would do."));
+      var it = A.h("table", "num-table");
+      it.innerHTML = "<thead><tr><th>Step injected (dB)</th><th>Recovered, frozen β</th><th>Recovered, refitted β</th><th>Refitted β (dB/m)</th></tr></thead><tbody>" +
+        ta.injected_step.results.map(function (r) {
+          return "<tr><td>" + A.fx(r.injected_db) + "</td><td>" + A.fx(r.recovered_frozen_beta_db) + "</td><td>" +
+            A.fx(r.recovered_refit_beta_db) + "</td><td>" + A.fx(r.refit_beta_db_per_m) + "</td></tr>";
+        }).join("") + "</tbody>";
+      s3.appendChild(it);
+      s3.appendChild(A.h("p", "cap",
+        "Refitting on contaminated data pulls the slope toward zero and overstates the step by roughly 5–10%. " +
+        "The operational implication is concrete: <b>freeze the coefficient on a clean baseline period</b> and apply " +
+        "it forward, rather than refitting on every new acquisition."));
+      s3.appendChild(A.h("div", "evidence",
+        '<span class="tier diagnostic">diagnostic</span><b>modelled</b> · synthetic step added to ' +
+        ta.injected_step.window_dates.join(", ") + " · the frozen-β column is exact by construction and is shown only as the control"));
+    }
+
+    // --- the exploratory trend ---------------------------------------------------
+    var s4 = A.h("section");
+    host.appendChild(s4);
+    var tr = m.trend;
+    s4.appendChild(A.h("h3", null, "And the trend?"));
+    s4.appendChild(A.h("p", "limits",
+      "Adding a linear time term to the model gives <span class=\"num\">" + A.sgn(tr.gamma_db_per_year) + "</span> dB " +
+      "per year, 95% CI " + A.ci(tr.gamma_95ci_db_per_year) + ", p = " + A.pv(tr.gamma_p) + " — <b>not " +
+      "distinguishable from zero</b>, over a record " + tr.record_length_years.toFixed(2) + " years long. " +
+      "With less than one full seasonal cycle, a trend and a season are the same thing arithmetically, and neither " +
+      "is identifiable. It is in no sense a subsidence, elevation-change or land-loss rate. It is listed because " +
+      "leaving it out would hide a question a reviewer would ask, not because it supports anything."));
+    s4.appendChild(A.h("div", "evidence",
+      '<span class="tier exploratory">exploratory</span><b>modelled</b> · Y = α + β·h + γ·t, t in years since the ' +
+      "first date · " + m.n + " acquisitions over " + tr.record_length_years.toFixed(2) + " years · reported so it cannot be rediscovered as a claim"));
+
+    // ============================ figure =====================================
+    function drawSeries(hostEl, m, pd, ta, o) {
+      var T = pd.map(function (d) { return Date.parse(d.date + "T00:00:00Z"); });
+      var raw = pd.map(function (d) { return d.y_db; });
+      var oos = pd.map(function (d) { return d.y_adj_out_of_sample_db; });
+      var ins = pd.map(function (d) { return d.y_adj_in_sample_db; });
+      var showP = view.mode === "prospective" || view.mode === "both";
+      var showD = view.mode === "descriptive" || view.mode === "both";
+
+      var W = 1120, H = 360, P = { l: 52, r: 18, t: 20, b: 30 };
+      var vals = raw.slice();
+      if (showP) vals = vals.concat(oos.filter(function (v) { return v != null; }));
+      if (showD) vals = vals.concat(ins);
+      var ys = A.ext(vals), yp = (ys[1] - ys[0]) * 0.12 || 0.2;
+      var ts = A.ext(T);
+      var x = A.scale(ts[0] - 8 * 864e5, ts[1] + 8 * 864e5, P.l, W - P.r);
+      var y = A.scale(ys[0] - yp, ys[1] + yp, H - P.b, P.t);
+      var svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, role: "group", "aria-label": "Raw and tide-adjusted marsh-relative backscatter over time" });
+
+      var firstTest = pd.findIndex(function (d) { return d.role === "test"; });
+      if (firstTest > 0) {
+        var xa = x((T[firstTest - 1] + T[firstTest]) / 2);
+        svg.appendChild(A.el("rect", { x: xa, y: P.t, width: W - P.r - xa, height: H - P.b - P.t, fill: A.INK, "fill-opacity": 0.05 }));
+        svg.appendChild(A.el("line", { x1: xa, x2: xa, y1: P.t, y2: H - P.b, stroke: A.INK, "stroke-width": 1, "stroke-dasharray": "3 3" }));
+        svg.appendChild(A.el("text", { x: xa + 8, y: P.t + 14, class: "axl", style: "font-weight:600" }, "held out — not used to fit the slope"));
+        svg.appendChild(A.el("text", { x: xa - 8, y: P.t + 14, class: "axl", "text-anchor": "end" }, "training dates"));
+      }
+      A.axes(svg, x, y, P, W, H, A.monthTicks(ts[0], ts[1]), A.ticks(ys[0] - yp, ys[1] + yp, 5), A.monthFmt, function (t) { return A.fx(t, 1); });
+      svg.appendChild(A.el("text", { x: P.l, y: P.t - 5, class: "axl" }, "marsh − upland HH (dB)"));
+
+      function path(values) {
+        var d = "", started = false;
+        values.forEach(function (v, i) {
+          if (v == null) { started = false; return; }
+          d += (started ? "L" : "M") + x(T[i]).toFixed(1) + " " + y(v).toFixed(1);
+          started = true;
+        });
+        return d;
+      }
+      // Raw first, in muted grey, so the corrected series carries the colour.
+      svg.appendChild(A.el("path", { d: path(raw), fill: "none", stroke: A.FAINT, "stroke-width": 1.4 }));
+      if (showD) {
+        svg.appendChild(A.el("path", { d: path(ins), fill: "none", stroke: A.MUTED, "stroke-width": 1.4, "stroke-dasharray": "2 3" }));
+        svg.appendChild(A.el("text", { x: x(T[0]) + 5, y: y(ins[0]) + 15, class: "lab", style: "font-size:10.5px;fill:" + A.MUTED }, "descriptive (all-dates β)"));
+      }
+      if (showP) {
+        svg.appendChild(A.el("path", { d: path(oos), fill: "none", stroke: o.color, "stroke-width": 2.4 }));
+        var firstOos = oos.findIndex(function (v) { return v != null; });
+        if (firstOos >= 0) {
+          oos.forEach(function (v, i) { if (v != null) svg.appendChild(A.el("circle", { cx: x(T[i]), cy: y(v), r: 2.6, fill: o.color })); });
+          svg.appendChild(A.el("text", { x: x(T[firstOos]) + 6, y: y(oos[firstOos]) - 9, class: "lab", style: "font-size:11px;font-weight:600;fill:" + o.color }, "prospective (training β)"));
+        }
+      }
+      pd.forEach(function (d, i) {
+        var p = A.PTS[orbit].filter(function (q) { return q.date === d.date; })[0];
+        if (p) svg.appendChild(A.mark(p, x(T[i]), y(raw[i]), { r: 3.6, sel: p.id === A.state.selected,
+          title: d.date + "\nraw " + A.fx(d.y_db) + " dB\n" + (d.y_adj_out_of_sample_db != null ? "prospective " + A.fx(d.y_adj_out_of_sample_db) + " dB\n" : "") + "h " + A.fx(d.h_m) + " m" }));
+      });
+      svg.appendChild(A.el("text", { x: x(T[0]) + 5, y: y(raw[0]) - 9, class: "lab", style: "font-size:10.5px;fill:" + A.MUTED }, "raw (measured)"));
+      hostEl.appendChild(svg);
+
+      // The size of the correction itself, which the main panel hides.
+      var H2 = 130, P2 = { l: 52, r: 18, t: 16, b: 26 };
+      var corr = pd.map(function (d) { return ta.beta_train_db_per_m * (d.h_m - ta.h_ref_m_navd88); });
+      var ce = A.ext(corr), cp = (ce[1] - ce[0]) * 0.15;
+      var y2 = A.scale(ce[0] - cp, ce[1] + cp, H2 - P2.b, P2.t);
+      var svg2 = A.el("svg", { viewBox: "0 0 " + W + " " + H2, role: "img", "aria-label": "The size of the tide correction applied at each date" });
+      A.axes(svg2, x, y2, P2, W, H2, A.monthTicks(ts[0], ts[1]), A.ticks(ce[0] - cp, ce[1] + cp, 3), function () { return ""; }, function (t) { return A.sgn(t, 1); });
+      svg2.appendChild(A.el("line", { x1: P2.l, x2: W - P2.r, y1: y2(0), y2: y2(0), stroke: A.INK }));
+      svg2.appendChild(A.el("text", { x: P2.l, y: P2.t - 3, class: "axl" }, "size of the correction applied, β·(h − h_ref), dB"));
+      corr.forEach(function (c, i) {
+        svg2.appendChild(A.el("line", { x1: x(T[i]), x2: x(T[i]), y1: y2(0), y2: y2(c), stroke: o.color, "stroke-width": 2, "stroke-opacity": 0.6 }));
+      });
+      hostEl.appendChild(svg2);
+
+      hostEl.appendChild(A.h("p", "cap",
+        "<b>The thick coloured line is the series the held-out statistics were computed from.</b> On the training " +
+        "dates it is identical to the raw series, because nothing is corrected there; the correction begins at the " +
+        "dashed divider, using the slope fitted on the training dates only (β = " +
+        A.fx(ta.beta_train_db_per_m) + " dB/m). The descriptive line, when shown, uses the all-dates slope (β = " +
+        A.fx(ta.beta_all_dates_db_per_m) + " dB/m) on every date: it looks tidier and proves nothing, because every " +
+        "point helped to fit it. The lower panel is how many decibels were subtracted at each date."));
+      hostEl.appendChild(A.h("div", "evidence",
+        '<span class="tier primary">primary</span><b>measured</b> raw · <b>modelled</b> adjusted = raw − β·(h − ' +
+        A.fx(ta.h_ref_m_navd88, 1) + " m) · training β from the first " + (m.n - ho.n) + " dates, held-out n = " + ho.n +
+        " · nothing from the test period touches the fitted slope · " + o.label));
+    }
+  });
+})();
+</script>
+</body>
+</html>

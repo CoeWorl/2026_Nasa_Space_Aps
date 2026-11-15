@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GROUNDTRUTH 01 — The finding</title>
+<link rel="stylesheet" href="atlas.css" />
+</head>
+<body>
+<div class="page">
+  <header class="mast">
+    <div id="locator" aria-hidden="true"></div>
+    <div>
+      <p class="kicker">Groundtruth / Jamaica Bay / 01</p>
+      <h1>The bay beneath the city</h1>
+      <p class="deck">A satellite, two viewing directions, and the tide hidden inside a radar image.</p>
+    </div>
+  </header>
+  <div id="app"></div>
+</div>
+<script src="atlas.js"></script>
+<script>
+"use strict";
+ATLAS.boot("finding", function (ctx) {
+  var A = ATLAS, host = ctx.host, M = A.MODELS, R = A.ROBUST;
+  var d  = M.tracks.descending_069.series.all_dates;
+  var aAll = M.tracks.ascending_133.series.all_dates;
+  var aScr = M.tracks.ascending_133.series.coverage_screened || aAll;
+  var ta = d.tide_adjustment, ho = ta.held_out, bh = d.benchmark.chronological_half, br = d.benchmark.rolling_origin;
+  var nEx = (M.tracks.ascending_133.excluded_by_screen || []).length;
+
+  host.appendChild(A.h("p", "lede",
+    "We matched " + A.im("descending_069") + "<b>" + d.n + " descending</b> and " + A.im("ascending_133") +
+    "<b>" + aScr.n + " quality-screened ascending</b> NISAR passes over the Jamaica Bay marsh with water levels " +
+    "measured by two USGS gauges within minutes of each overpass. This page states the finding and its limits. " +
+    "The seven that follow are the evidence, in the order a reviewer would ask for it."));
+
+  // --- the conclusion, stated as a conclusion --------------------------------
+  var box = A.h("div", "finding");
+  box.appendChild(A.h("h3", null, "Main finding"));
+  box.appendChild(A.h("p", null,
+    "Higher water levels were associated with a <b>weaker HH radar return</b> over the Jamaica Bay marsh, " +
+    "in both viewing directions. The estimated decline is <span class=\"num\">" + A.fx(d.regression.slope_db_per_m) +
+    " dB per metre</span> for descending passes (95% CI " + A.ci(d.regression.slope_ols_95ci) + ") and " +
+    "<span class=\"num\">" + A.fx(aScr.regression.slope_db_per_m) + " dB per metre</span> for quality-screened " +
+    "ascending passes (" + A.ci(aScr.regression.slope_ols_95ci) + ")."));
+  box.appendChild(A.h("p", null,
+    "A correction fitted on the earlier half of the descending record cut the spread of the later, unseen half " +
+    "from <span class=\"num\">" + A.fx(ho.raw.sd_db) + "</span> to <span class=\"num\">" + A.fx(ho.adjusted.sd_db) +
+    "</span> dB — a " + A.pct(ta.held_out.sd_reduction) + " reduction in standard deviation on " + ho.n +
+    " held-out dates — and predicted them with <span class=\"num\">" + A.pct(bh.tide.rmse_improvement_vs_constant) +
+    "</span> lower RMSE than a constant (" + A.pct(br.tide.rmse_improvement_vs_constant) + " on a rolling origin). " +
+    "So the relationship carries forward in time; it is not only a description of the dates it was fitted on."));
+  box.appendChild(A.h("p", null,
+    "The ascending estimate is <b>sensitive to " + nEx + " passes that covered only part of the bay</b>. " +
+    "With them in the fit the slope is <span class=\"num\">" + A.fx(aAll.regression.slope_db_per_m) + "</span> dB/m " +
+    "and the classical interval " + A.ci(aAll.regression.slope_ols_95ci) + " includes zero. " +
+    "Everything else on these pages survives dropping any single acquisition."));
+  host.appendChild(box);
+
+  // --- one scale for every estimate ------------------------------------------
+  var s2 = A.h("section");
+  host.appendChild(s2);
+  s2.appendChild(A.h("h2", null, "Every estimate on one scale"));
+  s2.appendChild(A.h("p", "prose",
+    "Two large numbers side by side invite a comparison the data do not support. Here each slope is drawn with its " +
+    "95% interval against a common axis and a zero line, so the inferential distinctions are the visible ones: " +
+    "both screened intervals exclude zero, and the interval that includes zero is the ascending fit with the " +
+    "partial-coverage passes left in."));
+  var rows = [
+    { label: "Descending 069", sub: "n = " + d.n + " · primary", value: d.regression.slope_db_per_m,
+      ci: d.regression.slope_ols_95ci, color: A.ORBITS.descending_069.color, shape: "circle", bold: true },
+    { label: "Ascending 133, screened", sub: "n = " + aScr.n + " · primary", value: aScr.regression.slope_db_per_m,
+      ci: aScr.regression.slope_ols_95ci, color: A.ORBITS.ascending_133.color, shape: "square", bold: true },
+    { label: "Ascending 133, all passes", sub: "n = " + aAll.n + " · sensitivity", value: aAll.regression.slope_db_per_m,
+      ci: aAll.regression.slope_ols_95ci, color: A.ORBITS.ascending_133.color, shape: "square", hollow: true }
+  ];
+  if (R && R.regions && R.regions.descending_069) {
+    var pooled = R.regions.descending_069.pooled;
+    rows.push({
+      label: "Mean over 45 marsh polygons", sub: "descending · random effects · diagnostic",
+      value: pooled.mu_db_per_m, ci: pooled.mu_ci95, color: A.MUTED, shape: "circle", rule: true
+    });
+  }
+  A.forest(s2, rows, { width: 820, label: "Slope of marsh-relative backscatter on water level, with 95% intervals" });
+  s2.appendChild(A.h("p", "cap",
+    "Filled marks are the primary analyses; the hollow mark is the ascending sensitivity fit. " +
+    "Intervals are the classical OLS intervals published in <span class=\"mono\">models.json</span>; " +
+    "chapter 04 puts heteroskedasticity-consistent, bootstrap and Theil–Sen intervals beside them."));
+
+  if (R && R.pooled_interaction) {
+    var pi = R.pooled_interaction.slope_difference;
+    s2.appendChild(A.h("p", "prose",
+      "<b>Do the two directions really differ?</b> Not detectably. A pooled model with a direction interaction, " +
+      "<span class=\"mono\">Y = b₀ + b₁·h + b₂·D + b₃·(h×D)</span>, puts the ascending-minus-descending difference at " +
+      "<span class=\"num\">" + A.sgn(pi.estimate) + "</span> dB/m, 95% CI " + A.ci(pi.ci95_hc3) + ", p = " + A.pv(pi.p_hc3) +
+      ". So <span class=\"num\">" + A.fx(d.regression.slope_db_per_m) + "</span> against <span class=\"num\">" +
+      A.fx(aScr.regression.slope_db_per_m) + "</span> is not evidence that descending is the more sensitive geometry. " +
+      "The two directions have different baselines and different acquisition geometry, so this pooled model stays a " +
+      "diagnostic and the direction-specific models stay primary."));
+    s2.appendChild(A.h("div", "evidence",
+      '<span class="tier diagnostic">diagnostic</span><b>modelled</b> · pooled across directions, HC3 standard errors · n = ' +
+      R.pooled_interaction.n + " · a difference here would still not be a physical difference in scattering"));
+  }
+
+  // --- what the data do and do not establish ---------------------------------
+  var s3 = A.h("section");
+  host.appendChild(s3);
+  s3.appendChild(A.h("h2", null, "What these data establish, and what they do not"));
+  var trio = A.h("div", "trio");
+  s3.appendChild(trio);
+  trio.appendChild(A.h("div", null,
+    "<h4>Supported by these data</h4><p class=\"prose\" style=\"font-size:14.5px\">" +
+    "An inverse association between observed water level and marsh-relative HH backscatter, replicated in two " +
+    "independent viewing geometries. A tide correction fitted on earlier dates that reduces error on later, " +
+    "unseen dates. A negative mean response across 45 marsh polygons. Stability under leave-one-out, " +
+    "robust-regression and bootstrap alternatives.</p>"));
+  trio.appendChild(A.h("div", null,
+    "<h4>Not established by these data</h4><p class=\"prose\" style=\"font-size:14.5px\">" +
+    "The physical scattering mechanism. That backscatter can be inverted to a water level where no gauge exists. " +
+    "That tidal sensitivity is uniform across the bay — a dependence-preserving permutation test says the count of " +
+    "negative polygon slopes carries little evidence on its own. Any statement about marsh loss, elevation, " +
+    "flood protection or restoration outcomes.</p>"));
+  trio.appendChild(A.h("div", null,
+    "<h4>The next validation step</h4><p class=\"prose\" style=\"font-size:14.5px\">" +
+    "More than one year of acquisitions, so a seasonal term is identifiable and the exploratory trend separates " +
+    "from phenology. A hierarchical model over polygon-level observations rather than a bay-wide median. " +
+    "An independent hydrologic or ecological outcome to validate the adjusted series against.</p>"));
+
+  // --- how to read these pages ------------------------------------------------
+  var s4 = A.h("section", "tight");
+  host.appendChild(s4);
+  s4.appendChild(A.h("h3", null, "How to read these pages"));
+  s4.appendChild(A.h("p", "prose",
+    "Every figure carries a chip saying where it sits in the hierarchy, so an exploratory control is never mistaken " +
+    "for the result: " +
+    "<span class=\"tier primary\">primary</span> the pre-registered analysis; " +
+    "<span class=\"tier sensitivity\">sensitivity</span> the same analysis under a different inclusion rule; " +
+    "<span class=\"tier diagnostic\">diagnostic</span> a check on the primary model's assumptions; " +
+    "<span class=\"tier exploratory\">exploratory</span> a question these data cannot yet settle."));
+  s4.appendChild(A.h("p", "prose",
+    "Marks keep one meaning throughout. " + A.im("descending_069") + " circle is a descending pass, " +
+    A.im("ascending_133") + " square is ascending, and " + A.im("ascending_133", true) + " hollow means the pass " +
+    "failed the 90% coverage screen — it is drawn everywhere, never dropped silently. " +
+    "A <span class=\"rule-s\"></span> solid rule is measured; a <span class=\"rule-d\"></span> dashed rule is modelled. " +
+    "Clicking any mark selects that acquisition, and the selection follows you from page to page."));
+  s4.appendChild(A.h("div", "evidence",
+    '<span class="tier primary">primary</span><b>measured</b> marks · <b>modelled</b> intervals · HH polarisation · ' +
+    "water level observed, not predicted · ascending and descending are never pooled except in the one model labelled a diagnostic"));
+});
+</script>
+</body>
+</html>

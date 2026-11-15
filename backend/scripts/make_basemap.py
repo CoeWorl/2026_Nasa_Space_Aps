@@ -160,6 +160,13 @@ def main() -> int:
         "image_note": "Temporal median of NISAR HH backscatter, descending track 069, "
                       f"{len(tracks['descending_069']['dates'])} dates, {abs(a) * FACTOR:.0f} m pixels. "
                       "Dark is radar-bright (buildings, vegetation); pale is radar-dark (open water).",
+        # The display stretch, so the page can draw a key instead of asserting
+        # a polarity in prose. Fixed across every acquisition and every page.
+        "display": {
+            "db_min": DB_RANGE[0], "db_max": DB_RANGE[1], "gamma": 0.8,
+            "rgb_at_db_min": list(WATER_RGB), "rgb_at_db_max": list(LAND_RGB),
+            "note": "linear in dB then gamma 0.8; low dB is pale, high dB is ink",
+        },
         "coverage": coverage, "regions": regions, "projects": projects, "gauges": gauges, "locator": locator,
     }
     args.out_dir.mkdir(parents=True, exist_ok=True)

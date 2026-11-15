@@ -1,0 +1,1314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GROUNDTRUTH — Jamaica Bay</title>
+<meta name="description" content="An editorial explorer for the Jamaica Bay NISAR record: real marsh polygons, real acquisitions, and the measured relationship between water level and radar backscatter." />
+
+<!--
+  THE EDITORIAL EXPLORER.
+
+  Four connected views over the same selection: Discover, Explore, Compare,
+  Evidence. The marsh is both the identity and the data object — every
+  outline on this page is a study polygon from the exported basemap, every
+  fill is that polygon's own measured HH backscatter on the selected
+  acquisition, and every number in Evidence is read from the Python exports.
+
+  THE SCIENCE STAYS IN PYTHON. This file computes differences, medians and
+  drawing scales. Slopes, intervals, p-values and pooled estimates are read
+  from models.json and robustness.json.
+
+  Selection (acquisition, track, polygon) lives in the query string and is
+  shared with the eight analysis chapters, so a link carries its state.
+-->
+
+<style>
+:root{
+  --paper:#f8f7f1; --white:#fffefa; --ink:#172c2a; --muted:#53645e;
+  --sage:#426f5c; --sage-light:#719987; --water:#dfebe7; --water-line:#bcd1ca;
+  --rust:#bc6042; --rust-light:#edccb9; --rule:#c6cec5; --soft:#eff1e9;
+  --focus:#1e5eab;
+  --font:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.5}
+button,input,select{font:inherit}
+button{cursor:pointer}
+button:disabled{cursor:not-allowed;opacity:.5}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+a{color:inherit}
+h1,h2,h3,p{margin-top:0}
+h1{font-size:clamp(38px,4.4vw,66px);letter-spacing:-.065em;line-height:1.04;font-weight:740;margin:0}
+h2{font-size:clamp(28px,2.9vw,44px);letter-spacing:-.05em;line-height:1.12;margin:4px 0 14px}
+h3{font-size:21px;letter-spacing:-.028em;line-height:1.2;margin:0 0 10px}
+.eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:11px;font-weight:700;color:var(--muted)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.tiny{font-size:12px;color:var(--muted)}
+.lead{font-size:19px;line-height:1.42;max-width:34ch}
+.finecopy{font-size:15px;color:var(--muted);max-width:40ch}
+
+/* --- chrome -------------------------------------------------------------- */
+.site-header{position:sticky;top:0;z-index:50;background:var(--paper);border-bottom:1px solid var(--rule)}
+.header-inner{height:78px;max-width:1480px;padding:0 42px;margin:0 auto;display:flex;align-items:center;gap:24px}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;min-width:250px}
+.brand-icon{color:var(--sage);width:52px;height:41px;flex:none}
+.brand-name{display:flex;flex-direction:column;line-height:1}
+.brand-name strong{font-size:22px;letter-spacing:-.045em;font-weight:750}
+.brand-name small{font-size:10px;letter-spacing:.22em;font-weight:750;margin-top:6px}
+.primary-nav{display:flex;gap:20px;height:100%;align-items:stretch;margin-left:auto}
+.nav-link{border:0;border-bottom:3px solid transparent;background:transparent;color:var(--ink);padding:4px 8px 0;font-weight:560;min-width:72px}
+.nav-link:hover{background:var(--soft)}
+.nav-link.active{border-bottom-color:var(--sage);font-weight:750}
+.header-side{margin-left:18px;display:flex;gap:8px;align-items:center}
+.container{max-width:1480px;padding:0 42px;margin:0 auto}
+main{min-height:calc(100vh - 150px)}
+.view{display:none}
+.view.active{display:block}
+.section-top{display:flex;align-items:baseline;justify-content:space-between;padding:26px 0 13px;gap:12px;border-bottom:1px solid var(--rule)}
+.section-top .eyebrow{color:var(--sage)}
+.section-top .tiny{text-align:right;max-width:52ch}
+
+/* --- buttons ------------------------------------------------------------- */
+.outline-button{min-height:46px;border:1px solid var(--sage);border-radius:4px;display:inline-flex;align-items:center;gap:12px;padding:9px 16px;color:var(--ink);background:transparent;font-weight:650;text-decoration:none}
+.outline-button:hover{background:var(--soft)}
+.outline-button.primary{background:var(--sage);border-color:var(--sage);color:#fff}
+.outline-button.primary:hover{background:#305745}
+.icon-button{display:inline-flex;gap:7px;align-items:center;justify-content:center;border:1px solid var(--rule);background:var(--white);padding:8px 12px;min-height:42px;color:var(--ink);border-radius:4px;font-size:13px}
+.icon-button:hover{background:var(--soft)}
+.segment{display:inline-flex;align-items:center;border:1px solid var(--rule);border-radius:4px;overflow:hidden;background:var(--white)}
+.segment button{background:transparent;border:0;padding:9px 13px;min-height:42px;font-size:13px;color:var(--ink)}
+.segment button+button{border-left:1px solid var(--rule)}
+.segment button.active{background:var(--sage);color:#fff}
+.controls-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;padding:15px 0;border-top:1px solid var(--rule)}
+
+/* --- map ----------------------------------------------------------------- */
+.map-board{position:relative;background:var(--water);border:1px solid var(--rule);display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.map-topline{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px 0}
+.map-topline .eyebrow{color:#365b51}
+.map-field{position:relative;flex:1;min-height:400px}
+.baymap{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;display:block}
+.baymap image{image-rendering:auto}
+.baymap.radar .basemap-plate{filter:none;opacity:1}
+.baymap.radar .water-wash{display:none}
+.marsh-shape{stroke:#f6f5ec;stroke-width:.45;stroke-linejoin:round;transition:fill .18s linear}
+.marsh-unit{cursor:pointer}
+.marsh-unit:hover .marsh-shape{stroke:var(--ink);stroke-width:1}
+.marsh-unit.is-selected .marsh-shape{stroke:var(--ink);stroke-width:1.3}
+.marsh-number{fill:#15241f;stroke:#f2f3ec;stroke-width:1.1;paint-order:stroke;font-size:8px;font-weight:750;pointer-events:none;font-family:var(--font)}
+.marsh-unit.is-selected .marsh-number{fill:#3c1a0c;stroke:#fff0e6}
+.bay-label{font-size:10px;letter-spacing:.3em;fill:#3e6a60;font-weight:600;pointer-events:none;font-family:var(--font)}
+.gauge-dot{fill:var(--ink);stroke:#fff;stroke-width:1.4}
+.gauge-text{font-size:7.5px;fill:var(--ink);stroke:#f7f7f0;stroke-width:2.4;paint-order:stroke;font-weight:700;font-family:var(--font)}
+.map-foot{display:flex;justify-content:space-between;align-items:center;gap:18px;border-top:1px solid var(--water-line);margin-top:auto;padding:10px 18px;font-size:12px;color:#3b6156;background:rgba(255,255,255,.3);flex-wrap:wrap}
+.legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.swatch{width:12px;height:12px;display:inline-block;border:1px solid #325b4d}
+.ramp{display:inline-block;width:92px;height:11px;border:1px solid #325b4d;background:linear-gradient(90deg,#bc6042,#80a991,#2c4a3f)}
+
+/* --- discover ------------------------------------------------------------ */
+.discover-layout{display:grid;grid-template-columns:minmax(300px,.34fr) minmax(0,.66fr);gap:30px;padding:34px 0 10px}
+.discover-intro{display:flex;flex-direction:column;gap:18px;align-items:flex-start}
+.playbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-top:4px;width:100%}
+.scrub{flex:1;min-width:170px;accent-color:var(--sage);height:26px}
+.readout{display:flex;gap:26px;flex-wrap:wrap;padding:12px 0 0}
+.readout div{display:flex;flex-direction:column;gap:2px}
+.readout strong{font-size:23px;letter-spacing:-.03em;font-weight:720}
+.tide-panel{border-top:1px solid var(--rule);margin-top:22px;padding-top:16px}
+.tide-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+.tidechart{width:100%;height:auto;display:block;font-family:var(--font)}
+.tidechart text{fill:var(--muted);font-size:9px}
+.tidechart .axis{stroke:var(--rule);stroke-width:1}
+.discover-notes{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:26px}
+.note-cell{padding:20px 26px 22px 0}
+.note-cell+.note-cell{border-left:1px solid var(--rule);padding-left:26px}
+.note-cell strong{display:block;font-size:19px;letter-spacing:-.03em;margin-top:5px}
+.note-cell p{font-size:13px;color:var(--muted);margin:6px 0 0;max-width:36ch}
+
+/* --- workspace (explore / compare) --------------------------------------- */
+.view-title{max-width:980px;padding:24px 0 18px;display:flex;align-items:end;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.view-title p{max-width:46ch;font-size:15px;color:var(--muted);margin:0}
+.workspace{display:grid;grid-template-columns:minmax(0,1.62fr) minmax(300px,.78fr);gap:26px;align-items:start}
+.side-panel{border-top:1px solid var(--rule);padding-top:20px}
+.side-panel h3{font-size:30px;margin:4px 0 6px;letter-spacing:-.04em}
+.data-row{display:flex;justify-content:space-between;align-items:baseline;gap:18px;padding:10px 0;border-bottom:1px solid var(--rule);font-size:14px}
+.data-row strong{font-weight:680;text-align:right}
+.chipbar{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 18px}
+.region-chip{min-height:42px;min-width:44px;border:1px solid var(--rule);border-radius:3px;background:var(--white);font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}
+.region-chip:hover{background:var(--soft)}
+.region-chip.active{background:var(--sage);border-color:var(--sage);color:#fff}
+.field-block{border-top:1px solid var(--rule);padding:16px 0 0;margin-top:20px}
+.field-block .eyebrow{margin-bottom:8px}
+.spark{width:100%;height:auto;display:block;font-family:var(--font)}
+.spark text{fill:var(--muted);font-size:8px}
+.notice{font-size:13px;color:var(--muted);line-height:1.55;padding:14px 0;border-top:1px solid var(--rule);margin-top:18px}
+
+/* --- compare ------------------------------------------------------------- */
+.comparison-stage{position:relative;background:var(--water);overflow:hidden;border:1px solid var(--rule);touch-action:pan-y}
+.compare-map{position:absolute;inset:0}
+.compare-map.b{clip-path:inset(0 0 0 50%)}
+.comparison-stage.two-up{position:relative;display:grid;grid-template-columns:1fr 1fr}
+.comparison-stage.two-up .compare-map{position:relative;inset:auto}
+.comparison-stage.two-up .compare-map.b{clip-path:none;border-left:1px solid var(--ink)}
+.comparison-stage.two-up .divider,.comparison-stage.two-up .handle{display:none}
+.divider{position:absolute;top:0;bottom:0;left:50%;width:2px;background:var(--ink);pointer-events:none}
+.handle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--white);color:var(--ink);border:1px solid var(--ink);border-radius:50%;width:40px;height:40px;display:grid;place-items:center;pointer-events:none;font-size:16px}
+.compare-tags{position:absolute;inset:12px 14px auto;display:flex;justify-content:space-between;pointer-events:none;gap:10px}
+.compare-tags span{background:var(--white);border:1px solid var(--rule);font-size:12px;padding:6px 9px;line-height:1.3}
+.compare-slider{width:100%;accent-color:var(--sage);height:26px;margin-top:8px}
+.pickrow{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.pickrow label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
+select{min-height:42px;border:1px solid var(--rule);border-radius:4px;background:var(--white);padding:8px 10px;color:var(--ink)}
+
+/* --- evidence ------------------------------------------------------------ */
+.analysis-board{border-top:1px solid var(--rule);padding-top:22px}
+.analysis-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.forest-chart{width:100%;max-width:900px;height:auto;display:block;font-family:var(--font)}
+.forest-chart text{fill:var(--ink);font-size:12px}
+.forest-chart .axis-label{fill:var(--muted);font-size:11px}
+.forest-chart .zero{stroke:#263e36;stroke-width:1.4;stroke-dasharray:5 5}
+.forest-chart .interval{stroke-width:3.2;stroke-linecap:round}
+.forest-chart .cap{stroke-width:2}
+.evidence-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(290px,.8fr);gap:30px;align-items:start}
+.finding-card{border:1px solid var(--rule);background:var(--white);padding:20px 22px}
+.finding-card h3{font-size:25px;letter-spacing:-.04em}
+.data-explainer{margin-top:22px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.data-explainer summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;gap:15px;align-items:center;padding:15px 0;font-weight:650}
+.data-explainer summary::-webkit-details-marker{display:none}
+.data-explainer summary::before{content:'+';font-size:21px;font-weight:400;margin-right:8px}
+.data-explainer[open] summary::before{content:'−'}
+.explainer-inside{padding:2px 0 22px;max-width:70ch}
+.explainer-inside p{font-size:14px;color:var(--muted);line-height:1.65}
+.chapter-list{display:grid;gap:0;border-top:1px solid var(--rule)}
+.chapter-list a{display:grid;grid-template-columns:38px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--rule);text-decoration:none;align-items:baseline}
+.chapter-list a:hover{background:var(--soft)}
+.chapter-list .no{font-size:12px;font-weight:750;color:var(--sage);font-variant-numeric:tabular-nums}
+.chapter-list .ttl{font-weight:650;font-size:15px}
+.chapter-list .bl{font-size:12.5px;color:var(--muted);grid-column:2}
+
+/* --- footer -------------------------------------------------------------- */
+.footer{border-top:1px solid var(--rule);margin-top:34px}
+.footer-inner{max-width:1480px;padding:16px 42px 26px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:24px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.skip-link{position:absolute;left:10px;top:-80px;z-index:200;background:var(--white);padding:10px 18px}
+.skip-link:focus{top:10px}
+.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+@media(prefers-reduced-motion:reduce){*{transition-duration:0s!important}}
+@media(max-width:1080px){
+  .header-inner,.container,.footer-inner{padding-left:26px;padding-right:26px}
+  .brand{min-width:180px}
+  .discover-layout{grid-template-columns:1fr}
+  .workspace,.evidence-grid{grid-template-columns:minmax(0,1.4fr) minmax(275px,.85fr)}
+}
+@media(max-width:760px){
+  .header-inner{height:auto;min-height:70px;padding:10px 16px;gap:8px;flex-wrap:wrap}
+  .brand{min-width:unset;flex:1}
+  .brand-icon{width:42px;height:33px}
+  .primary-nav{order:3;width:100%;height:46px;justify-content:space-between;gap:0;margin-left:0}
+  .nav-link{min-width:0;flex:1;padding:3px 4px;font-size:14px}
+  .header-side{display:none}
+  .container,.footer-inner{padding-left:16px;padding-right:16px}
+  .discover-layout,.workspace,.evidence-grid{grid-template-columns:1fr;gap:20px}
+  .discover-notes{grid-template-columns:1fr}
+  .note-cell,.note-cell+.note-cell{padding:16px 0;border-left:0;border-top:1px solid var(--rule)}
+  .discover-notes .note-cell:first-child{border-top:0}
+  .pickrow{grid-template-columns:1fr}
+  .marsh-number{font-size:11px}
+  .map-topline{flex-direction:column;align-items:flex-start;gap:8px;padding:12px 12px 0}
+  .map-foot{padding:10px 12px;font-size:11px}
+  .map-field{min-height:300px}
+  .readout{gap:16px}
+  .readout strong{font-size:20px}
+  .tide-head{align-items:flex-start}
+  .section-top{flex-direction:column;gap:6px}
+  .section-top .tiny{text-align:left;max-width:none}
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#page-main">Skip to content</a>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="#" data-view="discover">
+      <svg class="brand-icon" viewBox="0 0 58 45" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M5 16c4-7 8-2 13-9 3-4 11-5 13 0 1 4-1 6-6 8-7 3-12 10-19 7-3-1-3-3-1-6Z"/>
+        <path d="M8 33c5-6 11-4 16-9 4-3 9-4 13 0 5 5 0 12-7 12-10 0-13 6-20 3-4-1-5-3-2-6Z"/>
+        <path d="M39 25c3-5 7-6 12-4 5 3 4 8-1 11-4 2-5 7-11 7-6-1-7-6-4-10 1-2 3-3 4-4Z"/>
+      </svg>
+      <span class="brand-name"><strong>groundtruth</strong><small>JAMAICA BAY</small></span>
+    </a>
+    <nav class="primary-nav" aria-label="Views">
+      <button class="nav-link" data-view="discover">Discover</button>
+      <button class="nav-link" data-view="explore">Explore</button>
+      <button class="nav-link" data-view="compare">Compare</button>
+      <button class="nav-link" data-view="evidence">Evidence</button>
+    </nav>
+    <div class="header-side">
+      <a class="icon-button" id="chapters-link" href="finding.html">Analysis chapters →</a>
+    </div>
+  </div>
+</header>
+
+<main id="page-main">
+
+  <!-- ============================ DISCOVER ============================ -->
+  <section class="view" id="view-discover">
+    <div class="container">
+      <div class="section-top">
+        <span class="eyebrow">An illustrated investigation / Jamaica Bay, New York</span>
+        <span class="tiny" id="discover-sub">Every outline is a study polygon; every fill is that polygon's own measured backscatter.</span>
+      </div>
+
+      <div class="discover-layout">
+        <div class="discover-intro">
+          <span class="eyebrow">01 / The place</span>
+          <h1>A bay of changing patterns</h1>
+          <p class="lead">Explore how the tide shapes what the satellite sees.</p>
+          <p class="finecopy">Across Jamaica Bay's marshes, the radar signal tends to weaken as water
+            levels rise. Step through the record and watch every marsh respond — the ball
+            on the tide chart is the water level the satellite actually met.</p>
+          <div class="playbar">
+            <button class="outline-button primary" id="play">▶&nbsp; Play the record</button>
+            <input class="scrub" id="scrub" type="range" min="0" max="1" value="0" step="1"
+                   aria-label="Step through acquisitions in date order" />
+          </div>
+          <div class="readout" id="readout"></div>
+          <a class="outline-button" href="#" data-view="explore">Explore the marshes&nbsp; →</a>
+        </div>
+
+        <div class="map-board">
+          <div class="map-topline">
+            <span class="eyebrow">Marsh response on the selected pass</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <div class="segment" id="resp-toggle" role="group" aria-label="Response">
+                <button data-resp="relative" class="active">Minus upland</button>
+                <button data-resp="raw">Raw HH</button>
+              </div>
+              <div class="segment" id="plate-toggle" role="group" aria-label="Backdrop">
+                <button data-plate="illustrated" class="active">Illustrated</button>
+                <button data-plate="radar">Radar</button>
+              </div>
+            </div>
+          </div>
+          <div class="map-field"><svg class="baymap" id="map-discover" role="img"></svg></div>
+          <div class="map-foot">
+            <div class="legend">
+              <span><i class="ramp"></i></span>
+              <span class="mono">−1.5 dB</span>
+              <span>weaker&nbsp;·&nbsp;usual&nbsp;·&nbsp;stronger</span>
+              <span class="mono">+1.5 dB</span>
+            </div>
+            <span id="map-foot-note">HH anomaly against each polygon's own median</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tide-panel">
+        <div class="tide-head">
+          <div>
+            <span class="eyebrow">Tide at the bay</span>
+            <div class="tiny">Water level (m, NAVD88), mean of the Inwood and Rockaway gauges</div>
+          </div>
+          <div class="segment" id="tide-toggle" role="group" aria-label="Tide chart view">
+            <button data-tide="record" class="active">Across the record</button>
+            <button data-tide="day">Through the selected day</button>
+          </div>
+        </div>
+        <svg class="tidechart" id="tidechart" role="img"></svg>
+      </div>
+
+      <div class="discover-notes" id="discover-notes"></div>
+    </div>
+  </section>
+
+  <!-- ============================= EXPLORE ============================= -->
+  <section class="view" id="view-explore">
+    <div class="container">
+      <div class="section-top">
+        <span class="eyebrow">02 / Explore geography</span>
+        <span class="tiny">Select a marsh on the map or from the numbered index. The selection follows you into Compare and Evidence.</span>
+      </div>
+      <div class="view-title">
+        <div>
+          <h2>Choose a place to investigate.</h2>
+          <p>The sixteen largest marsh polygons carry numbers. All of them are selectable,
+             and each one keeps its own record of backscatter and water level.</p>
+        </div>
+      </div>
+      <div class="workspace">
+        <div class="map-board">
+          <div class="map-topline">
+            <span class="eyebrow">Marsh-region index</span>
+            <span class="tiny" id="explore-count"></span>
+          </div>
+          <div class="map-field"><svg class="baymap" id="map-explore" role="img"></svg></div>
+          <div class="map-foot">
+            <div class="legend">
+              <span><i class="swatch" style="background:#80a991"></i> marsh polygon</span>
+              <span><i class="swatch" style="background:#bc6042"></i> selected</span>
+            </div>
+            <span>Outlines are the sampled study polygons, not surveyed marsh boundaries.</span>
+          </div>
+        </div>
+        <aside class="side-panel">
+          <span class="eyebrow">Current selection</span>
+          <h3 id="sel-title">—</h3>
+          <p class="tiny" id="sel-kind"></p>
+          <div id="sel-rows"></div>
+          <div class="field-block">
+            <span class="eyebrow">This polygon: HH against water level</span>
+            <svg class="spark" id="sel-spark" role="img"></svg>
+            <p class="tiny" id="sel-spark-note"></p>
+          </div>
+          <div class="field-block">
+            <span class="eyebrow">Jump to a numbered marsh</span>
+            <div class="chipbar" id="chipbar"></div>
+          </div>
+        </aside>
+      </div>
+      <p class="notice" id="explore-notice"></p>
+    </div>
+  </section>
+
+  <!-- ============================= COMPARE ============================= -->
+  <section class="view" id="view-compare">
+    <div class="container">
+      <div class="section-top">
+        <span class="eyebrow">03 / Compare the same place</span>
+        <span class="tiny">Two real acquisitions of the same polygons. Location is fixed; only the observation changes.</span>
+      </div>
+      <div class="view-title">
+        <div>
+          <h2>What changes between two views?</h2>
+          <p>Keep the ground fixed and change the water level. The fills are each polygon's
+             measured HH on that date, so the difference you see is a difference in the record.</p>
+        </div>
+      </div>
+      <div class="workspace">
+        <div>
+          <div class="pickrow">
+            <label>Reference acquisition
+              <select id="pick-a"></select></label>
+            <label>Comparison acquisition
+              <select id="pick-b"></select></label>
+          </div>
+          <div class="controls-row">
+            <div class="segment" id="compare-mode" role="group" aria-label="Comparison layout">
+              <button data-mode="swipe" class="active">Swipe</button>
+              <button data-mode="two-up">Side by side</button>
+            </div>
+            <button class="icon-button" id="pick-extremes">Use the lowest and highest water levels</button>
+          </div>
+          <div class="comparison-stage" id="stage">
+            <div class="compare-map a"><svg class="baymap" id="map-compare-a" role="img"></svg></div>
+            <div class="compare-map b"><svg class="baymap" id="map-compare-b" role="img"></svg></div>
+            <div class="divider" id="divider"></div>
+            <div class="handle" id="handle">↔</div>
+            <div class="compare-tags"><span id="tag-a"></span><span id="tag-b"></span></div>
+          </div>
+          <input class="compare-slider" id="compare-slider" type="range" min="0" max="100" value="50"
+                 aria-label="Move the comparison divider" />
+          <p class="tiny" id="compare-micro"></p>
+        </div>
+        <aside class="side-panel">
+          <span class="eyebrow">The comparison</span>
+          <h3 id="cmp-title">—</h3>
+          <div id="cmp-rows"></div>
+          <div class="field-block">
+            <span class="eyebrow">What a comparison like this can and cannot show</span>
+            <p class="tiny" id="cmp-caveat"></p>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= EVIDENCE ============================ -->
+  <section class="view" id="view-evidence">
+    <div class="container">
+      <div class="section-top">
+        <span class="eyebrow">04 / Evidence &amp; uncertainty</span>
+        <span class="tiny">Reported bay-wide estimates · 95% confidence intervals · read from the Python exports</span>
+      </div>
+      <div class="view-title">
+        <div>
+          <h2>What does the record support?</h2>
+          <p>Every estimate on one scale, including the ascending passes that fail the
+             coverage screen, so the screen's effect is visible rather than assumed.</p>
+        </div>
+      </div>
+      <div class="evidence-grid">
+        <div class="analysis-board">
+          <div class="analysis-heading">
+            <div>
+              <h3>HH backscatter response to water level</h3>
+              <span class="tiny">Estimated change in decibels per metre of measured water level</span>
+            </div>
+          </div>
+          <svg class="forest-chart" id="forest" role="img"></svg>
+          <details class="data-explainer">
+            <summary>Why the two directions are not evidence about geometry
+              <span class="tiny" style="margin-left:auto">statistics</span></summary>
+            <div class="explainer-inside" id="interaction-copy"></div>
+          </details>
+          <details class="data-explainer">
+            <summary>Marsh by marsh, and why a simple count of negative slopes is weak
+              <span class="tiny" style="margin-left:auto">statistics</span></summary>
+            <div class="explainer-inside" id="pooled-copy"></div>
+          </details>
+        </div>
+        <aside>
+          <div class="finding-card">
+            <span class="eyebrow">Main finding</span>
+            <h3>A pattern, with a qualification.</h3>
+            <p class="tiny" id="finding-copy"></p>
+          </div>
+          <div class="field-block">
+            <span class="eyebrow">Do not overstate</span>
+            <p class="tiny">These results show an association between measured water level and
+              radar backscatter over marsh. They are not a validated scattering mechanism, not a
+              water-level retrieval product, and not evidence of marsh loss or gain.</p>
+          </div>
+          <div class="field-block">
+            <span class="eyebrow">The full analysis, in eight chapters</span>
+            <nav class="chapter-list" id="chapter-list" aria-label="Analysis chapters"></nav>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <span>GROUNDTRUTH · Jamaica Bay · NISAR L2 GCOV, tracks 069 and 133 · USGS gauges 01311850 and 01311875</span>
+    <span id="foot-provenance"></span>
+  </div>
+</footer>
+
+<script>
+"use strict";
+(function () {
+
+var Q = new URLSearchParams(location.search);
+var DATA = new URL(Q.get("data") || "./data-app/", location.href);
+var SVGNS = "http://www.w3.org/2000/svg";
+
+var TRACKS = {
+  descending_069: { label: "Descending 069", short: "descending" },
+  ascending_133:  { label: "Ascending 133",  short: "ascending" }
+};
+var CHAPTERS = [
+  ["01", "finding.html",    "The finding",     "What the data support, with every slope on one scale."],
+  ["02", "observe.html",    "One observation", "A radar image, two gauges, and the instant the satellite sampled."],
+  ["03", "evidence.html",   "Both directions", "The two direction-specific regressions."],
+  ["04", "robustness.html", "Robustness",      "What happens when the assumptions are pushed."],
+  ["05", "holdout.html",    "Held out",        "Does the correction work on dates the model never saw?"],
+  ["06", "marshes.html",    "Marsh by marsh",  "Forty-five polygons and a dependence-aware null."],
+  ["07", "matched.html",    "Tide-matched",    "Comparing passes that saw the same water level."],
+  ["08", "context.html",    "Restoration",     "Context only: where this could later be tested."]
+];
+
+// Anomaly colour ramp: weaker return (the direction higher water predicts)
+// runs to rust, stronger return runs to deep sage.
+var RAMP = [[-1.5, [188, 96, 66]], [-0.5, [205, 150, 120]], [0, [128, 169, 145]], [0.6, [74, 122, 102]], [1.5, [40, 70, 60]]];
+var ANOM_CAP = 1.5;
+
+var state = {
+  view: "discover", track: "descending_069", acq: null, region: null,
+  plate: "illustrated", tide: "record", mode: "swipe", split: 50, resp: "relative",
+  cmpA: null, cmpB: null
+};
+
+var BASE, TS, MODELS, ROBUST, HYDRO;
+var VIEW = null;     // the drawn window: the marshes and both gauges, padded
+var ORDER = [];      // acquisition records for the active track, date order
+var BYACQ = {};      // acquisition_id -> pooled record
+var UPLAND = {};     // acquisition_id -> upland HH departure from its own median
+var REGIONS = [];    // merged geometry + series
+var BYREG = {};
+var NUMBERED = [];   // the sixteen largest, numbered
+var timer = null;
+
+// ---------------------------------------------------------------- utilities
+function el(name, attrs, text) {
+  var n = document.createElementNS(SVGNS, name);
+  for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) n.setAttribute(k, attrs[k]);
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+function fmt(v, d) { return v === null || v === undefined || !isFinite(v) ? "—" : v.toFixed(d === undefined ? 2 : d); }
+function signed(v, d) { return (v > 0 ? "+" : "") + fmt(v, d); }
+function median(a) {
+  var s = a.filter(function (x) { return x !== null && isFinite(x); }).sort(function (p, q) { return p - q; });
+  if (!s.length) return null;
+  var m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+function dateLabel(iso) {
+  var d = new Date(iso + "T12:00:00Z");
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+function shortDate(iso) {
+  var d = new Date(iso + "T12:00:00Z");
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+function rampColour(v) {
+  if (v === null || v === undefined || !isFinite(v)) return "#c9ccc2";
+  var x = Math.max(RAMP[0][0], Math.min(RAMP[RAMP.length - 1][0], v)), i;
+  for (i = 0; i < RAMP.length - 1; i++) if (x <= RAMP[i + 1][0]) break;
+  var a = RAMP[i], b = RAMP[Math.min(i + 1, RAMP.length - 1)];
+  var t = b[0] === a[0] ? 0 : (x - a[0]) / (b[0] - a[0]);
+  return "rgb(" + a[1].map(function (c, j) { return Math.round(c + t * (b[1][j] - c)); }).join(",") + ")";
+}
+function fetchJSON(name, optional) {
+  return fetch(new URL(name, DATA)).then(function (r) {
+    if (!r.ok) { if (optional) return null; throw new Error(name + " " + r.status); }
+    return r.json();
+  }).catch(function (e) { if (optional) return null; throw e; });
+}
+
+// ---------------------------------------------------------------- URL state
+function readURL() {
+  if (Q.get("view")) state.view = Q.get("view");
+  if (TRACKS[Q.get("orbit")]) state.track = Q.get("orbit");
+  if (Q.get("sel")) state.acq = Q.get("sel");
+  if (Q.get("region")) state.region = Q.get("region");
+}
+function params() {
+  var q = new URLSearchParams();
+  if (Q.get("data")) q.set("data", Q.get("data"));
+  if (state.acq) q.set("sel", state.acq);
+  q.set("orbit", state.track);
+  if (state.region) q.set("region", state.region);
+  return q;
+}
+function pushURL() {
+  var q = params();
+  q.set("view", state.view);
+  history.replaceState(null, "", location.pathname + "?" + q.toString());
+  var shared = params().toString();
+  document.querySelectorAll("a[data-file]").forEach(function (a) { a.href = a.dataset.file + "?" + shared; });
+  document.getElementById("chapters-link").href = "finding.html?" + shared;
+}
+
+// ---------------------------------------------------------------- prepare
+function prepare() {
+  var tk = state.track;
+  ORDER = TS.pooled[tk].slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  BYACQ = {};
+  ORDER.forEach(function (p) { BYACQ[p.acquisition_id] = p; });
+  if (!BYACQ[state.acq]) state.acq = ORDER[0].acquisition_id;
+
+  // The upland reference: what the dry land did on the same pass. Subtracting
+  // it is the response the analysis actually models, and it removes drift that
+  // moves marsh and upland together.
+  var um = median(ORDER.map(function (p) { return p.upland_hh_db; }));
+  UPLAND = {};
+  ORDER.forEach(function (p) {
+    UPLAND[p.acquisition_id] = (p.upland_hh_db === null || um === null) ? 0 : p.upland_hh_db - um;
+  });
+
+  var ids = TS.regions[tk].acquisition_ids;
+  var rings = {};
+  BASE.regions.forEach(function (r) { rings[r.region_id] = r.ring; });
+
+  var fits = {};
+  if (ROBUST && ROBUST.regions && ROBUST.regions[tk]) {
+    ROBUST.regions[tk].fits.forEach(function (f) { fits[f.region_id] = f; });
+  }
+
+  REGIONS = [];
+  BYREG = {};
+  TS.regions[tk].regions.forEach(function (r) {
+    var ring = rings[r.region_id];
+    if (!ring) return;
+    var hh = {}, cov = {};
+    ids.forEach(function (id, i) { hh[id] = r.hh_backscatter_db[i]; cov[id] = r.coverage_fraction[i]; });
+    var med = median(r.hh_backscatter_db);
+    var rec = {
+      id: r.region_id, kind: r.kind, pixels: r.n_pixels, ring: ring,
+      d: ringPath(ring), hh: hh, coverage: cov, median: med,
+      hhList: r.hh_backscatter_db, fit: fits[r.region_id] || null,
+      exploratory: r.tide_response || null,
+      cx: ring.reduce(function (s, p) { return s + p[0]; }, 0) / ring.length,
+      cy: ring.reduce(function (s, p) { return s + p[1]; }, 0) / ring.length
+    };
+    REGIONS.push(rec);
+    BYREG[rec.id] = rec;
+  });
+
+  NUMBERED = REGIONS.slice().sort(function (a, b) { return b.pixels - a.pixels; }).slice(0, 16);
+  NUMBERED.forEach(function (r, i) { r.no = (i + 1 < 10 ? "0" : "") + (i + 1); });
+
+  if (!BYREG[state.region]) state.region = NUMBERED.length ? NUMBERED[0].id : (REGIONS[0] && REGIONS[0].id);
+
+  VIEW = frameOn(REGIONS, BASE.gauges);
+
+  var lo = ORDER.slice().sort(function (a, b) { return a.mean_water_level_m_navd88 - b.mean_water_level_m_navd88; });
+  state.cmpA = (BYACQ[state.cmpA] ? state.cmpA : lo[0].acquisition_id);
+  state.cmpB = (BYACQ[state.cmpB] ? state.cmpB : lo[lo.length - 1].acquisition_id);
+}
+// The study window is wider than the marshes. Draw the bay, not the whole
+// raster: the bounding box of every polygon and both gauges, padded, then
+// widened to a panoramic aspect so the board fills edge to edge.
+function frameOn(regions, gauges) {
+  var xs = [], ys = [];
+  regions.forEach(function (r) { r.ring.forEach(function (p) { xs.push(p[0]); ys.push(p[1]); }); });
+  Object.keys(gauges || {}).forEach(function (k) { xs.push(gauges[k].px[0]); ys.push(gauges[k].px[1]); });
+  var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+  var y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+  var px = (x1 - x0) * 0.1, py = (y1 - y0) * 0.16;
+  x0 -= px; x1 += px; y0 -= py; y1 += py;
+  var w = x1 - x0, h = y1 - y0, target = 1.5;
+  if (w / h < target) { var grow = (h * target - w) / 2; x0 -= grow; x1 += grow; }
+  else { var g2 = (w / target - h) / 2; y0 -= g2; y1 += g2; }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, k: (x1 - x0) / 471 };
+}
+function ringPath(ring) {
+  return ring.map(function (p, i) { return (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1); }).join("") + "Z";
+}
+function anomaly(reg, acqId) {
+  var v = reg.hh[acqId];
+  if (v === null || v === undefined || !isFinite(v) || reg.median === null) return null;
+  var a = v - reg.median;
+  return state.resp === "relative" ? a - (UPLAND[acqId] || 0) : a;
+}
+
+// ---------------------------------------------------------------- the map
+function drawMap(svg, acqId, opt) {
+  opt = opt || {};
+  clear(svg);
+  svg.setAttribute("viewBox", [VIEW.x, VIEW.y, VIEW.w, VIEW.h].map(function (v) { return v.toFixed(1); }).join(" "));
+  svg.setAttribute("preserveAspectRatio", "xMidYMid slice");
+  svg.setAttribute("class", "baymap" + (state.plate === "radar" && opt.allowRadar !== false ? " radar" : ""));
+
+  var defs = el("defs");
+  var f = el("filter", { id: "glow-" + svg.id, x: "-30%", y: "-30%", width: "160%", height: "160%" });
+  f.appendChild(el("feGaussianBlur", { stdDeviation: 2.2 }));
+  defs.appendChild(f);
+  // Duotone plate: the radar median is pale over water and inky over the city,
+  // so a luminance ramp between two paper tints gives land and water without
+  // inventing a coastline.
+  var duo = el("filter", { id: "duo-" + svg.id, "color-interpolation-filters": "sRGB" });
+  duo.appendChild(el("feColorMatrix", { type: "saturate", values: "0" }));
+  var ct = el("feComponentTransfer");
+  [["feFuncR", 0.886, 0.761], ["feFuncG", 0.898, 0.843], ["feFuncB", 0.843, 0.812]].forEach(function (t) {
+    ct.appendChild(el(t[0], { type: "table", tableValues: t[1] + " " + t[2] }));
+  });
+  duo.appendChild(ct);
+  defs.appendChild(duo);
+  svg.appendChild(defs);
+
+  svg.appendChild(el("rect", { x: VIEW.x, y: VIEW.y, width: VIEW.w, height: VIEW.h, fill: "#dfebe7", "class": "water-wash" }));
+  if (BASE.image) {
+    svg.appendChild(el("image", {
+      href: BASE.image, x: 0, y: 0, width: BASE.width, height: BASE.height,
+      "class": "basemap-plate", preserveAspectRatio: "none",
+      filter: state.plate === "radar" ? null : "url(#duo-" + svg.id + ")"
+    }));
+  }
+
+  var glow = el("g", { filter: "url(#glow-" + svg.id + ")" });
+  var shapes = el("g");
+  svg.appendChild(glow);
+  svg.appendChild(shapes);
+
+  REGIONS.forEach(function (r) {
+    var selected = r.id === state.region;
+    var fill, a = null;
+    if (opt.colour === "index") {
+      fill = selected ? "#bc6042" : "#80a991";
+    } else {
+      a = anomaly(r, acqId);
+      fill = rampColour(a);
+    }
+    if (a !== null && Math.abs(a) > 0.25) {
+      glow.appendChild(el("path", {
+        d: r.d, fill: "none", stroke: a < 0 ? "#bc6042" : "#2c4a3f",
+        "stroke-width": 2.4,
+        "stroke-opacity": Math.min(0.85, (Math.abs(a) - 0.25) / (ANOM_CAP - 0.25) * 0.85)
+      }));
+    }
+    var g = el("g", {
+      "class": "marsh-unit" + (selected ? " is-selected" : ""),
+      tabindex: opt.interactive === false ? null : "0",
+      role: opt.interactive === false ? null : "button"
+    });
+    g.appendChild(el("path", { d: r.d, "class": "marsh-shape", fill: fill }));
+    var title = (r.no ? "Marsh " + r.no + " · " : "") + r.kind + " · " + r.pixels + " pixels at 10 m";
+    if (a !== null) title += " · HH anomaly " + signed(a, 2) + " dB";
+    g.appendChild(el("title", {}, title));
+    if (opt.interactive !== false) {
+      g.addEventListener("click", function () { selectRegion(r.id); });
+      g.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectRegion(r.id); }
+      });
+    }
+    shapes.appendChild(g);
+    if (r.no && opt.numbers !== false) {
+      g.appendChild(el("text", { x: r.cx, y: r.cy + 3, "class": "marsh-number", "text-anchor": "middle" }, r.no));
+    }
+  });
+
+  if (opt.chrome !== false) {
+    svg.appendChild(el("text", { x: VIEW.x + VIEW.w * 0.52, y: VIEW.y + VIEW.h * 0.78, "class": "bay-label", "text-anchor": "middle" }, "JAMAICA BAY"));
+    Object.keys(BASE.gauges || {}).forEach(function (k) {
+      var g = BASE.gauges[k];
+      svg.appendChild(el("circle", { cx: g.px[0], cy: g.px[1], r: 2.6, "class": "gauge-dot" }));
+      svg.appendChild(el("text", { x: g.px[0] + 5, y: g.px[1] + 2.5, "class": "gauge-text" }, k === "inwood" ? "Inwood" : "Rockaway"));
+    });
+    var km = 2000 / BASE.pixel_m, x0 = VIEW.x + VIEW.w - km - 26, y0 = VIEW.y + VIEW.h - 14;
+    svg.appendChild(el("path", { d: "M" + x0 + " " + y0 + "h" + km, stroke: "#3b6156", "stroke-width": 1.4 }));
+    svg.appendChild(el("text", { x: x0 + km / 2, y: y0 - 4, "class": "gauge-text", "text-anchor": "middle" }, "2 km"));
+  }
+}
+
+// ---------------------------------------------------------------- tide chart
+function drawTide() {
+  var svg = document.getElementById("tidechart");
+  clear(svg);
+  var narrow = window.innerWidth < 760;
+  var W = narrow ? 520 : 1180, H = narrow ? 230 : 210;
+  var P = { l: narrow ? 40 : 48, r: narrow ? 12 : 18, t: 16, b: 30 };
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+
+  if (state.tide === "day") { drawTideDay(svg, W, H, P); return; }
+
+  var vals = ORDER.map(function (p) { return p.mean_water_level_m_navd88; });
+  var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  var pad = (hi - lo) * 0.18 || 0.2;
+  lo -= pad; hi += pad;
+  var X = function (i) { return P.l + (W - P.l - P.r) * (ORDER.length < 2 ? 0.5 : i / (ORDER.length - 1)); };
+  var Y = function (v) { return P.t + (H - P.t - P.b) * (1 - (v - lo) / (hi - lo)); };
+
+  [lo, (lo + hi) / 2, hi].forEach(function (v) {
+    svg.appendChild(el("path", { d: "M" + P.l + " " + Y(v) + "H" + (W - P.r), "class": "axis" }));
+    svg.appendChild(el("text", { x: P.l - 7, y: Y(v) + 3, "text-anchor": "end" }, fmt(v, 2)));
+  });
+
+  svg.appendChild(el("path", {
+    d: ORDER.map(function (p, i) { return (i ? "L" : "M") + X(i) + " " + Y(p.mean_water_level_m_navd88); }).join(""),
+    fill: "none", stroke: "#426f5c", "stroke-width": 1.6, "stroke-opacity": 0.75
+  }));
+
+  ORDER.forEach(function (p, i) {
+    var sel = p.acquisition_id === state.acq;
+    var screened = p.passes_coverage_screen !== false;
+    var c = el("circle", {
+      cx: X(i), cy: Y(p.mean_water_level_m_navd88), r: sel ? 8 : 4,
+      fill: sel ? "#bc6042" : (screened ? "#426f5c" : "#f8f7f1"),
+      stroke: sel ? "#172c2a" : "#426f5c", "stroke-width": sel ? 2 : 1.4,
+      cursor: "pointer"
+    });
+    c.appendChild(el("title", {}, dateLabel(p.date) + " · " + fmt(p.mean_water_level_m_navd88, 2) + " m" +
+      (screened ? "" : " · fails the 90% coverage screen")));
+    c.addEventListener("click", function () { selectAcq(p.acquisition_id); });
+    svg.appendChild(c);
+    if (i === 0 || i === ORDER.length - 1 || (sel && i > 1 && i < ORDER.length - 2)) {
+      svg.appendChild(el("text", { x: X(i), y: H - 10, "text-anchor": i === 0 ? "start" : (i === ORDER.length - 1 ? "end" : "middle") },
+        shortDate(p.date)));
+    }
+  });
+  svg.appendChild(el("text", { x: P.l, y: 11 }, ORDER.length + " acquisitions · " + TRACKS[state.track].label));
+}
+
+function drawTideDay(svg, W, H, P) {
+  var hy = HYDRO && HYDRO.acquisitions ? HYDRO.acquisitions[state.acq] : null;
+  if (!hy) {
+    svg.appendChild(el("text", { x: P.l, y: H / 2, fill: "#53645e" }, "No continuous gauge record exported for this acquisition."));
+    return;
+  }
+  var gs = hy.gauges, keys = Object.keys(gs), all = [];
+  keys.forEach(function (k) { all = all.concat(gs[k].water_level_m.filter(function (v) { return v !== null && isFinite(v); })); });
+  if (!all.length) { svg.appendChild(el("text", { x: P.l, y: H / 2, fill: "#53645e" }, "No gauge values in the window.")); return; }
+  var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), pad = (hi - lo) * 0.14 || 0.2;
+  lo -= pad; hi += pad;
+  var mins = HYDRO.half_window_hours * 60;
+  var X = function (m) { return P.l + (W - P.l - P.r) * (m + mins) / (2 * mins); };
+  var Y = function (v) { return P.t + (H - P.t - P.b) * (1 - (v - lo) / (hi - lo)); };
+
+  [lo, (lo + hi) / 2, hi].forEach(function (v) {
+    svg.appendChild(el("path", { d: "M" + P.l + " " + Y(v) + "H" + (W - P.r), "class": "axis" }));
+    svg.appendChild(el("text", { x: P.l - 7, y: Y(v) + 3, "text-anchor": "end" }, fmt(v, 2)));
+  });
+  [-12, -6, 0, 6, 12].forEach(function (h) {
+    svg.appendChild(el("text", { x: X(h * 60), y: H - 10, "text-anchor": "middle" }, h === 0 ? "overpass" : (h > 0 ? "+" + h + " h" : h + " h")));
+  });
+
+  keys.forEach(function (k) {
+    var g = gs[k], d = "", started = false;
+    g.offset_min.forEach(function (m, i) {
+      var v = g.water_level_m[i];
+      if (v === null || !isFinite(v)) { started = false; return; }
+      d += (started ? "L" : "M") + X(m).toFixed(1) + " " + Y(v).toFixed(1);
+      started = true;
+    });
+    svg.appendChild(el("path", {
+      d: d, fill: "none", stroke: "#426f5c", "stroke-width": 1.7,
+      "stroke-dasharray": k === "rockaway" ? "5 4" : null, "stroke-opacity": 0.9
+    }));
+  });
+
+  var p = BYACQ[state.acq];
+  svg.appendChild(el("path", { d: "M" + X(0) + " " + P.t + "V" + (H - P.b), stroke: "#172c2a", "stroke-width": 1, "stroke-dasharray": "3 3" }));
+  svg.appendChild(el("circle", { cx: X(0), cy: Y(p.mean_water_level_m_navd88), r: 8, fill: "#bc6042", stroke: "#172c2a", "stroke-width": 2 }));
+  svg.appendChild(el("text", { x: P.l, y: 11 }, dateLabel(p.date) + " · solid Inwood, dashed Rockaway · ±" + HYDRO.half_window_hours + " h"));
+}
+
+// ---------------------------------------------------------------- discover
+function renderDiscover() {
+  drawMap(document.getElementById("map-discover"), state.acq, { numbers: false });
+  drawTide();
+
+  var p = BYACQ[state.acq];
+  var anoms = REGIONS.filter(function (r) { return r.kind !== "upland"; })
+    .map(function (r) { return anomaly(r, state.acq); })
+    .filter(function (v) { return v !== null; });
+  var med = median(anoms);
+
+  var ro = document.getElementById("readout");
+  ro.innerHTML = "";
+  [["Acquisition", dateLabel(p.date)],
+   ["Water level", fmt(p.mean_water_level_m_navd88, 2) + " m"],
+   [state.resp === "relative" ? "Median marsh anomaly (minus upland)" : "Median marsh HH anomaly", signed(med, 2) + " dB"]].forEach(function (pair) {
+    var d = document.createElement("div");
+    d.innerHTML = '<span class="eyebrow">' + pair[0] + "</span><strong>" + pair[1] + "</strong>";
+    ro.appendChild(d);
+  });
+
+  document.getElementById("scrub").value = String(ORDER.findIndex(function (q) { return q.acquisition_id === state.acq; }));
+  document.getElementById("map-foot-note").textContent = state.resp === "relative"
+    ? "HH minus the upland reference, against each polygon's own median over " + ORDER.length + " passes"
+    : "Raw HH against each polygon's own median — seasonal drift is still in this picture";
+}
+
+function renderNotes() {
+  var host = document.getElementById("discover-notes");
+  host.innerHTML = "";
+  var d = variant("descending_069", "all_dates"), a = variant("ascending_133", "coverage_screened");
+  var pooled = ROBUST && ROBUST.regions ? ROBUST.regions[state.track] : null;
+  var notes = [
+    ["The relationship", fmt(d.ols.slope.estimate, 2) + " dB/m",
+     "Marsh-minus-upland HH against measured water level on the descending track, over " + d.n +
+     " acquisitions. 95% CI " + ci(d.ols.slope.ci95_hc3) + "."],
+    ["Both directions agree in sign", fmt(a.ols.slope.estimate, 2) + " dB/m",
+     "The ascending track, screened for coverage, gives a slope of the same sign over " + a.n +
+     " acquisitions — but the two are not statistically distinguishable."],
+    ["Marsh by marsh", pooled ? fmt(pooled.pooled.mu_db_per_m, 2) + " dB/m" : "—",
+     pooled ? "Random-effects mean over " + pooled.pooled.k + " polygons, 95% CI " + ci(pooled.pooled.mu_ci95) +
+     ". Individual polygons vary widely (I² = " + fmt(pooled.pooled.i_squared, 2) + ")." : ""]
+  ];
+  notes.forEach(function (n) {
+    var c = document.createElement("div");
+    c.className = "note-cell";
+    c.innerHTML = '<span class="eyebrow">' + n[0] + "</span><strong>" + n[1] + "</strong><p>" + n[2] + "</p>";
+    host.appendChild(c);
+  });
+}
+
+// ---------------------------------------------------------------- explore
+function renderExplore() {
+  drawMap(document.getElementById("map-explore"), state.acq, { colour: "index" });
+  document.getElementById("explore-count").textContent =
+    REGIONS.length + " study polygons · " + NUMBERED.length + " numbered";
+
+  var r = BYREG[state.region];
+  document.getElementById("sel-title").textContent = r.no ? "Marsh " + r.no : "Polygon " + r.id.replace("osm_", "");
+  document.getElementById("sel-kind").textContent =
+    r.kind + " · " + r.pixels + " pixels at 10 m · " + r.id;
+
+  var rows = document.getElementById("sel-rows");
+  rows.innerHTML = "";
+  var a = anomaly(r, state.acq), p = BYACQ[state.acq];
+  var list = [
+    ["Selected acquisition", dateLabel(p.date)],
+    ["Water level at overpass", fmt(p.mean_water_level_m_navd88, 2) + " m NAVD88"],
+    ["HH on this pass", fmt(r.hh[state.acq], 2) + " dB"],
+    ["Against its own median", a === null ? "—" : signed(a, 2) + " dB"],
+    ["Coverage on this pass", r.coverage[state.acq] === undefined ? "—" : fmt(r.coverage[state.acq] * 100, 0) + "%"]
+  ];
+  if (r.fit) {
+    list.push(["Own slope (HH vs water level)", fmt(r.fit.slope_db_per_m, 2) + " dB/m"]);
+    list.push(["95% CI (HC3)", ci(r.fit.ci95_hc3)]);
+    list.push(["Shrunken slope", fmt(r.fit.partial_pooled.slope_db_per_m, 2) + " dB/m"]);
+    list.push(["P(slope < 0) after shrinkage", fmt(r.fit.partial_pooled.prob_negative, 2)]);
+  }
+  list.forEach(function (pair) {
+    var d = document.createElement("div");
+    d.className = "data-row";
+    d.innerHTML = "<span>" + pair[0] + "</span><strong>" + pair[1] + "</strong>";
+    rows.appendChild(d);
+  });
+
+  drawSpark(r);
+  document.getElementById("sel-spark-note").textContent = r.fit
+    ? "Each dot is one acquisition. The line is this polygon's own fitted slope; shrinkage pulls extreme polygons toward the bay-wide mean."
+    : "This polygon is not in the per-polygon model set (it fails the minimum-pixel or coverage requirement).";
+
+  var bar = document.getElementById("chipbar");
+  bar.innerHTML = "";
+  NUMBERED.forEach(function (n) {
+    var b = document.createElement("button");
+    b.className = "region-chip" + (n.id === state.region ? " active" : "");
+    b.textContent = n.no;
+    b.setAttribute("aria-label", "Marsh " + n.no + ", " + n.pixels + " pixels");
+    b.addEventListener("click", function () { selectRegion(n.id); });
+    bar.appendChild(b);
+  });
+
+  var pooled = ROBUST && ROBUST.regions ? ROBUST.regions[state.track] : null;
+  document.getElementById("explore-notice").textContent = pooled
+    ? "Of " + pooled.n_polygons + " polygons fitted on this track, " + pooled.n_negative +
+      " have a negative slope. Under a null that permutes water level across acquisition dates — keeping each date's whole spatial vector together — that count has p = " +
+      fmt(pooled.permutation.p_n_negative, 2) + ", so the count alone is weak evidence. The pooled random-effects mean is the defensible summary."
+    : "";
+}
+
+function drawSpark(r) {
+  var svg = document.getElementById("sel-spark");
+  clear(svg);
+  var W = 320, H = 170, P = { l: 34, r: 10, t: 12, b: 26 };
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  var pts = ORDER.map(function (p) {
+    return { h: p.mean_water_level_m_navd88, y: r.hh[p.acquisition_id], id: p.acquisition_id, date: p.date };
+  }).filter(function (p) { return p.y !== null && isFinite(p.y); });
+  if (!pts.length) return;
+  var hs = pts.map(function (p) { return p.h; }), ys = pts.map(function (p) { return p.y; });
+  var h0 = Math.min.apply(null, hs), h1 = Math.max.apply(null, hs);
+  var y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+  var hp = (h1 - h0) * 0.08 || 0.1, yp = (y1 - y0) * 0.12 || 0.3;
+  h0 -= hp; h1 += hp; y0 -= yp; y1 += yp;
+  var X = function (v) { return P.l + (W - P.l - P.r) * (v - h0) / (h1 - h0); };
+  var Y = function (v) { return P.t + (H - P.t - P.b) * (1 - (v - y0) / (y1 - y0)); };
+
+  svg.appendChild(el("path", { d: "M" + P.l + " " + (H - P.b) + "H" + (W - P.r), "class": "axis", stroke: "#c6cec5" }));
+  svg.appendChild(el("path", { d: "M" + P.l + " " + P.t + "V" + (H - P.b), "class": "axis", stroke: "#c6cec5" }));
+  svg.appendChild(el("text", { x: W - P.r, y: H - 8, "text-anchor": "end" }, "water level (m) →"));
+  svg.appendChild(el("text", { x: P.l - 6, y: P.t + 6, "text-anchor": "end" }, fmt(y1, 1)));
+  svg.appendChild(el("text", { x: P.l - 6, y: H - P.b, "text-anchor": "end" }, fmt(y0, 1)));
+
+  if (r.fit) {
+    var b = r.fit.slope_db_per_m;
+    var mh = hs.reduce(function (s, v) { return s + v; }, 0) / hs.length;
+    var my = ys.reduce(function (s, v) { return s + v; }, 0) / ys.length;
+    svg.appendChild(el("path", {
+      d: "M" + X(h0) + " " + Y(my + b * (h0 - mh)) + "L" + X(h1) + " " + Y(my + b * (h1 - mh)),
+      stroke: "#bc6042", "stroke-width": 1.8, fill: "none"
+    }));
+  }
+  pts.forEach(function (p) {
+    var sel = p.id === state.acq;
+    var c = el("circle", { cx: X(p.h), cy: Y(p.y), r: sel ? 5 : 3, fill: sel ? "#bc6042" : "#426f5c", stroke: sel ? "#172c2a" : "none", "stroke-width": 1.5, cursor: "pointer" });
+    c.appendChild(el("title", {}, dateLabel(p.date) + " · " + fmt(p.h, 2) + " m · " + fmt(p.y, 2) + " dB"));
+    c.addEventListener("click", function () { selectAcq(p.id); });
+    svg.appendChild(c);
+  });
+}
+
+// ---------------------------------------------------------------- compare
+function renderCompare() {
+  var selA = document.getElementById("pick-a"), selB = document.getElementById("pick-b");
+  [[selA, state.cmpA], [selB, state.cmpB]].forEach(function (pair) {
+    pair[0].innerHTML = "";
+    ORDER.forEach(function (p) {
+      var o = document.createElement("option");
+      o.value = p.acquisition_id;
+      o.textContent = dateLabel(p.date) + " · " + fmt(p.mean_water_level_m_navd88, 2) + " m" +
+        (p.passes_coverage_screen === false ? " · partial" : "");
+      if (p.acquisition_id === pair[1]) o.selected = true;
+      pair[0].appendChild(o);
+    });
+  });
+
+  var stage = document.getElementById("stage");
+  stage.className = "comparison-stage" + (state.mode === "two-up" ? " two-up" : "");
+  stage.style.height = Math.round(Math.min(520, Math.max(320, stage.clientWidth * (BASE.height / BASE.width) * (state.mode === "two-up" ? 0.5 : 1)))) + "px";
+
+  drawMap(document.getElementById("map-compare-a"), state.cmpA, { chrome: false, numbers: false });
+  drawMap(document.getElementById("map-compare-b"), state.cmpB, { chrome: false, numbers: false });
+
+  var A = BYACQ[state.cmpA], B = BYACQ[state.cmpB];
+  document.getElementById("tag-a").textContent = dateLabel(A.date) + " (" + fmt(A.mean_water_level_m_navd88, 2) + " m)";
+  document.getElementById("tag-b").textContent = dateLabel(B.date) + " (" + fmt(B.mean_water_level_m_navd88, 2) + " m)";
+  setSplit(state.split);
+
+  var r = BYREG[state.region];
+  var dh = B.mean_water_level_m_navd88 - A.mean_water_level_m_navd88;
+  var dy = (r.hh[state.cmpB] !== null && r.hh[state.cmpA] !== null) ? r.hh[state.cmpB] - r.hh[state.cmpA] : null;
+  var bayA = median(REGIONS.map(function (x) { return x.hh[state.cmpA]; }));
+  var bayB = median(REGIONS.map(function (x) { return x.hh[state.cmpB]; }));
+
+  document.getElementById("cmp-title").textContent = r.no ? "Marsh " + r.no : "Polygon " + r.id.replace("osm_", "");
+  var rows = document.getElementById("cmp-rows");
+  rows.innerHTML = "";
+  [["Water-level difference", signed(dh, 2) + " m"],
+   ["This marsh: HH difference", dy === null ? "—" : signed(dy, 2) + " dB"],
+   ["All marshes: median HH difference", signed(bayB - bayA, 2) + " dB"],
+   ["Days apart", String(Math.round(Math.abs(new Date(B.date) - new Date(A.date)) / 86400000))],
+   ["Coverage screen", (A.passes_coverage_screen === false || B.passes_coverage_screen === false) ? "one pass is partial" : "both passes complete"]
+  ].forEach(function (pair) {
+    var d = document.createElement("div");
+    d.className = "data-row";
+    d.innerHTML = "<span>" + pair[0] + "</span><strong>" + pair[1] + "</strong>";
+    rows.appendChild(d);
+  });
+
+  var d = variant(state.track, state.track === "ascending_133" ? "coverage_screened" : "all_dates");
+  var expected = d.ols.slope.estimate * dh;
+  document.getElementById("compare-micro").textContent =
+    "Fills are each polygon's own HH anomaly on that date. At " + signed(dh, 2) +
+    " m of water-level difference, the fitted bay-wide relationship expects about " + signed(expected, 2) + " dB.";
+  document.getElementById("cmp-caveat").textContent =
+    "Two acquisitions differ in more than water level: wind, soil moisture, vegetation state and incidence all move between " +
+    Math.round(Math.abs(new Date(B.date) - new Date(A.date)) / 86400000) + " days. A single pair is an illustration of the relationship, " +
+    "not a measurement of it — the regression over all " + ORDER.length + " passes is the evidence, and the held-out test in chapter 05 is the check.";
+}
+function setSplit(pct) {
+  state.split = pct;
+  document.querySelector(".compare-map.b").style.clipPath = "inset(0 0 0 " + pct + "%)";
+  document.getElementById("divider").style.left = pct + "%";
+  document.getElementById("handle").style.left = pct + "%";
+  document.getElementById("compare-slider").value = String(pct);
+}
+
+// ---------------------------------------------------------------- evidence
+function variant(track, name) { return ROBUST.tracks[track].variants[name]; }
+function ci(a) { return "[" + fmt(a[0], 2) + ", " + fmt(a[1], 2) + "]"; }
+
+function renderEvidence() {
+  var rows = [
+    { label: "Descending 069 · screened", sub: "n = " + variant("descending_069", "all_dates").n,
+      v: variant("descending_069", "all_dates"), colour: "#426f5c" },
+    { label: "Ascending 133 · screened", sub: "n = " + variant("ascending_133", "coverage_screened").n,
+      v: variant("ascending_133", "coverage_screened"), colour: "#bc6042" },
+    { label: "Ascending 133 · all passes", sub: "n = " + variant("ascending_133", "all_dates").n,
+      v: variant("ascending_133", "all_dates"), colour: "#d59b7b" }
+  ];
+  var pooled = ROBUST.regions[state.track].pooled;
+  rows.push({ label: "Polygon-level pooled mean", sub: "random effects, k = " + pooled.k,
+    est: pooled.mu_db_per_m, lo: pooled.mu_ci95[0], hi: pooled.mu_ci95[1], colour: "#719987" });
+
+  var svg = document.getElementById("forest");
+  clear(svg);
+  var W = 900, rowH = 58, P = { l: 215, r: 70, t: 24, b: 44 };
+  var H = P.t + rows.length * rowH + P.b;
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+
+  var all = [];
+  rows.forEach(function (r) {
+    var lo = r.v ? r.v.ols.slope.ci95_hc3[0] : r.lo, hi = r.v ? r.v.ols.slope.ci95_hc3[1] : r.hi;
+    all.push(lo, hi);
+  });
+  all.push(0);
+  var min = Math.min.apply(null, all), max = Math.max.apply(null, all);
+  var pad = (max - min) * 0.14;
+  min -= pad; max += pad;
+  var X = function (v) { return P.l + (W - P.l - P.r) * (v - min) / (max - min); };
+
+  svg.appendChild(el("path", { d: "M" + X(0) + " " + (P.t - 8) + "V" + (P.t + rows.length * rowH), "class": "zero" }));
+
+  rows.forEach(function (r, i) {
+    var y = P.t + i * rowH + rowH / 2;
+    var est = r.v ? r.v.ols.slope.estimate : r.est;
+    var lo = r.v ? r.v.ols.slope.ci95_hc3[0] : r.lo;
+    var hi = r.v ? r.v.ols.slope.ci95_hc3[1] : r.hi;
+    svg.appendChild(el("text", { x: P.l - 16, y: y - 2, "text-anchor": "end", "font-weight": 650 }, r.label));
+    svg.appendChild(el("text", { x: P.l - 16, y: y + 14, "text-anchor": "end", "class": "axis-label" }, r.sub));
+    svg.appendChild(el("path", { d: "M" + X(lo) + " " + y + "H" + X(hi), stroke: r.colour, "class": "interval" }));
+    [lo, hi].forEach(function (v) {
+      svg.appendChild(el("path", { d: "M" + X(v) + " " + (y - 7) + "V" + (y + 7), stroke: r.colour, "class": "cap" }));
+    });
+    svg.appendChild(el("circle", { cx: X(est), cy: y, r: 6.5, fill: r.colour, stroke: "#f8f7f1", "stroke-width": 1.5 }));
+    svg.appendChild(el("text", { x: W - P.r + 10, y: y + 4, "font-weight": 650 }, fmt(est, 2)));
+  });
+
+  var axisY = P.t + rows.length * rowH + 16;
+  svg.appendChild(el("path", { d: "M" + P.l + " " + axisY + "H" + (W - P.r), stroke: "#c6cec5", "stroke-width": 1 }));
+  var step = (max - min) / 4;
+  for (var k = 0; k <= 4; k++) {
+    var v = min + k * step;
+    svg.appendChild(el("path", { d: "M" + X(v) + " " + axisY + "V" + (axisY + 5), stroke: "#c6cec5" }));
+    svg.appendChild(el("text", { x: X(v), y: axisY + 18, "text-anchor": "middle", "class": "axis-label" }, fmt(v, 1)));
+  }
+  svg.appendChild(el("text", { x: (P.l + W - P.r) / 2, y: axisY + 36, "text-anchor": "middle", "class": "axis-label" },
+    "ESTIMATED SLOPE (dB per metre of water level)"));
+
+  var inter = ROBUST.pooled_interaction, diff = inter.slope_difference;
+  document.getElementById("interaction-copy").innerHTML =
+    "<p>The descending slope is " + fmt(variant("descending_069", "all_dates").ols.slope.estimate, 2) +
+    " dB/m and the screened ascending slope is " + fmt(variant("ascending_133", "coverage_screened").ols.slope.estimate, 2) +
+    " dB/m. It is tempting to read the gap as something about viewing geometry. Fitted directly — " + inter.model +
+    " — the difference between the two slopes is " + signed(diff.estimate, 2) + " dB/m with a 95% interval of " +
+    ci(diff.ci95_hc3) + " and p = " + fmt(diff.p_hc3, 3) + ". That interval contains zero, so the record does not " +
+    "distinguish the two directions. What it does distinguish is the overall level: ascending passes sit " +
+    fmt(inter.direction_offset_db.estimate, 2) + " dB above descending ones, which is an offset, not a difference in response.</p>" +
+    "<p class='tiny'>" + inter.status + "</p>";
+
+  var reg = ROBUST.regions[state.track];
+  document.getElementById("pooled-copy").innerHTML =
+    "<p>Fitting each polygon on its own gives " + reg.n_negative + " negative slopes out of " + reg.n_polygons +
+    ", and " + reg.n_q05_bh + " survive a Benjamini–Hochberg correction. The count on its own is weaker than it looks: " +
+    "polygons in one bay on one date are not independent. Permuting water level across acquisition dates — moving each date's " +
+    "whole spatial vector together, " + reg.permutation.draws + " draws — a null bay produces " +
+    fmt(reg.permutation.null_n_negative_mean, 1) + " negative slopes on average and 40 at the 95th percentile, so " +
+    reg.permutation.observed_n_negative + " gives p = " + fmt(reg.permutation.p_n_negative, 2) + ".</p>" +
+    "<p>The summary that survives that null is the random-effects mean: " + fmt(reg.pooled.mu_db_per_m, 2) +
+    " dB/m, 95% CI " + ci(reg.pooled.mu_ci95) + ", with between-polygon spread τ = " + fmt(reg.pooled.tau_db_per_m, 2) +
+    " dB/m and I² = " + fmt(reg.pooled.i_squared, 2) + ". Marshes differ a great deal from one another; the average still leans negative.</p>";
+
+  var d = variant("descending_069", "all_dates");
+  document.getElementById("finding-copy").textContent =
+    "Higher measured water level is associated with weaker HH return over marsh in both viewing directions: " +
+    fmt(d.ols.slope.estimate, 2) + " dB/m on descending track 069 (95% CI " + ci(d.ols.slope.ci95_hc3) + ", n = " + d.n +
+    ") and " + fmt(variant("ascending_133", "coverage_screened").ols.slope.estimate, 2) +
+    " dB/m on screened ascending 133. The two are not distinguishable from each other, and the residuals are " +
+    "autocorrelated, so the held-out test carries more weight than the classical interval.";
+
+  var list = document.getElementById("chapter-list");
+  list.innerHTML = "";
+  CHAPTERS.forEach(function (c) {
+    var a = document.createElement("a");
+    a.dataset.file = c[1];
+    a.href = c[1];
+    a.innerHTML = '<span class="no">' + c[0] + '</span><span class="ttl">' + c[2] + '</span><span class="bl">' + c[3] + "</span>";
+    list.appendChild(a);
+  });
+  pushURL();
+}
+
+// ---------------------------------------------------------------- selection
+function selectAcq(id) {
+  state.acq = id;
+  render();
+}
+function selectRegion(id) {
+  state.region = id;
+  render();
+}
+function setView(v) {
+  state.view = v;
+  document.querySelectorAll(".view").forEach(function (s) { s.classList.toggle("active", s.id === "view-" + v); });
+  document.querySelectorAll(".nav-link").forEach(function (b) { b.classList.toggle("active", b.dataset.view === v); });
+  render();
+}
+
+function render() {
+  if (state.view === "discover") renderDiscover();
+  if (state.view === "explore") renderExplore();
+  if (state.view === "compare") renderCompare();
+  if (state.view === "evidence") renderEvidence();
+  pushURL();
+}
+
+// ---------------------------------------------------------------- playback
+function play() {
+  var btn = document.getElementById("play");
+  if (timer) { stop(); return; }
+  btn.textContent = "◼  Stop";
+  timer = setInterval(function () {
+    var i = ORDER.findIndex(function (p) { return p.acquisition_id === state.acq; });
+    state.acq = ORDER[(i + 1) % ORDER.length].acquisition_id;
+    renderDiscover();
+    pushURL();
+  }, 850);
+}
+function stop() {
+  clearInterval(timer);
+  timer = null;
+  document.getElementById("play").textContent = "▶  Play the record";
+}
+
+// ---------------------------------------------------------------- wiring
+function wire() {
+  document.querySelectorAll("[data-view]").forEach(function (b) {
+    b.addEventListener("click", function (e) { e.preventDefault(); setView(b.dataset.view); });
+  });
+  document.getElementById("play").addEventListener("click", play);
+  document.getElementById("scrub").addEventListener("input", function () {
+    stop();
+    state.acq = ORDER[parseInt(this.value, 10)].acquisition_id;
+    renderDiscover();
+    pushURL();
+  });
+  document.getElementById("resp-toggle").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    state.resp = b.dataset.resp;
+    this.querySelectorAll("button").forEach(function (x) { x.classList.toggle("active", x === b); });
+    render();
+  });
+  document.getElementById("plate-toggle").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    state.plate = b.dataset.plate;
+    this.querySelectorAll("button").forEach(function (x) { x.classList.toggle("active", x === b); });
+    render();
+  });
+  document.getElementById("tide-toggle").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    state.tide = b.dataset.tide;
+    this.querySelectorAll("button").forEach(function (x) { x.classList.toggle("active", x === b); });
+    drawTide();
+  });
+  document.getElementById("compare-mode").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    state.mode = b.dataset.mode;
+    this.querySelectorAll("button").forEach(function (x) { x.classList.toggle("active", x === b); });
+    renderCompare();
+  });
+  document.getElementById("pick-a").addEventListener("change", function () { state.cmpA = this.value; renderCompare(); });
+  document.getElementById("pick-b").addEventListener("change", function () { state.cmpB = this.value; renderCompare(); });
+  document.getElementById("pick-extremes").addEventListener("click", function () {
+    var s = ORDER.slice().sort(function (a, b) { return a.mean_water_level_m_navd88 - b.mean_water_level_m_navd88; });
+    state.cmpA = s[0].acquisition_id;
+    state.cmpB = s[s.length - 1].acquisition_id;
+    renderCompare();
+  });
+  document.getElementById("compare-slider").addEventListener("input", function () { setSplit(parseInt(this.value, 10)); });
+
+  var stage = document.getElementById("stage"), dragging = false;
+  function at(e) {
+    var r = stage.getBoundingClientRect();
+    var x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+    setSplit(Math.max(0, Math.min(100, Math.round(x / r.width * 100))));
+  }
+  stage.addEventListener("pointerdown", function (e) { if (state.mode !== "swipe") return; dragging = true; at(e); });
+  window.addEventListener("pointermove", function (e) { if (dragging) at(e); });
+  window.addEventListener("pointerup", function () { dragging = false; });
+  window.addEventListener("resize", function () { if (state.view === "compare") renderCompare(); });
+}
+
+// ---------------------------------------------------------------- boot
+readURL();
+Promise.all([
+  fetchJSON("basemap.json"),
+  fetchJSON("timeseries.json"),
+  fetchJSON("models.json"),
+  fetchJSON("robustness.json"),
+  fetchJSON("hydrographs.json", true)
+]).then(function (r) {
+  BASE = r[0]; TS = r[1]; MODELS = r[2]; ROBUST = r[3]; HYDRO = r[4];
+  prepare();
+  document.getElementById("scrub").max = String(ORDER.length - 1);
+  document.getElementById("foot-provenance").textContent =
+    "Basemap: " + (BASE.image_note || "").split(".")[0] + " · " + BASE.pixel_m.toFixed(0) + " m display pixels";
+  document.getElementById("discover-sub").textContent =
+    REGIONS.length + " study polygons · " + ORDER.length + " acquisitions on " + TRACKS[state.track].label +
+    " · every fill is that polygon's own measured backscatter";
+  wire();
+  renderNotes();
+  setView(state.view);
+}).catch(function (e) {
+  document.getElementById("page-main").innerHTML =
+    '<div class="container" style="padding:60px 42px"><h2>The data products did not load.</h2>' +
+    '<p class="finecopy">' + String(e) + '. This page reads the exported products from <code>' + DATA.href +
+    '</code>. Run <code>make serve</code> from the repository root, or pass <code>?data=</code> with a reachable path.</p></div>';
+});
+
+})();
+</script>
+</body>
+</html>

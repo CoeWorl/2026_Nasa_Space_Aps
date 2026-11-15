@@ -34,8 +34,28 @@ const CORS: Record<string, string> = {
 const KEY_PATTERN = /^(data|results)\/[A-Za-z0-9._/-]+$/;
 const ALLOWED_SUFFIX = /\.(tif|tiff|json|geojson|png|csv)$/;
 
-/** The explore.html page, served from R2 so one origin hosts page + data. */
-const PAGE_KEY = "app/explore.html";
+/**
+ * The atlas pages and their two shared assets, served from R2 so one origin
+ * hosts page + data. An allowlist, not a prefix match: nothing under app/ is
+ * reachable unless it is named here, and a page added to web/ has to be added
+ * here too. "bay" is the baseline explorer and is also what "/" serves.
+ */
+const PAGES = [
+  "bay",
+  "finding",
+  "observe",
+  "evidence",
+  "robustness",
+  "holdout",
+  "marshes",
+  "matched",
+  "context",
+];
+const ASSETS = ["atlas.css", "atlas.js"];
+const ASSET_TYPES: Record<string, string> = {
+  css: "text/css; charset=utf-8",
+  js: "text/javascript; charset=utf-8",
+};
 
 const CONTENT_TYPES: Record<string, string> = {
   tif: "image/tiff",
@@ -113,15 +133,16 @@ export default {
       );
     }
 
-    if (url.pathname === "/") {
+    if (url.pathname === "/api") {
       return Response.json(
         {
           service: "groundtruth-api",
           endpoints: {
             health: "/health",
+            app: "/",
             index: "/data/index.json",
             artifact: "/data/<name>.tif",
-            explore: "/explore.html",
+            chapters: "/finding.html",
             products: "/data-app/<name>.json",
           },
           notes: "Artifacts support HTTP Range; see Accept-Ranges.",
@@ -137,22 +158,30 @@ export default {
       });
     }
 
-    // The explore page itself, served from R2 as text/html. Its own fetches
-    // for /data-app/<file> are handled by the alias below, so page and data
-    // come from one origin with no CORS and no ?data= needed.
-    if (url.pathname === "/explore" || url.pathname === "/explore.html") {
-      const page = await env.DATA.head(PAGE_KEY);
-      if (!page) return plain(404, "explore.html not seeded; run seed.sh");
+    // The atlas pages and their shared stylesheet and script, served from R2.
+    // Their own fetches for /data-app/<file> are handled by the alias below,
+    // so page and data come from one origin with no CORS and no ?data= needed.
+    // "/" is the baseline explorer. Everything else resolves by name.
+    const name = url.pathname === "/" ? "bay.html" : url.pathname.slice(1);
+    const bare = name.endsWith(".html") ? name.slice(0, -5) : name;
+    const isPage = PAGES.includes(bare);
+    const isAsset = ASSETS.includes(name);
+    if (isPage || isAsset) {
+      const file = isPage ? `${bare}.html` : name;
+      const key = `app/${file}`;
+      const head = await env.DATA.head(key);
+      if (!head) return plain(404, `${file} not seeded; run seed.sh`);
       const headers = new Headers(CORS);
-      page.writeHttpMetadata(headers);
-      headers.set("Content-Type", "text/html; charset=utf-8");
-      headers.set("ETag", page.httpEtag);
+      head.writeHttpMetadata(headers);
+      const ext = file.slice(file.lastIndexOf(".") + 1);
+      headers.set("Content-Type", ASSET_TYPES[ext] ?? CONTENT_TYPES.html);
+      headers.set("ETag", head.httpEtag);
       headers.set("Cache-Control", "public, max-age=60");
-      headers.set("Content-Length", String(page.size));
+      headers.set("Content-Length", String(head.size));
       if (request.method === "HEAD") {
         return new Response(null, { status: 200, headers });
       }
-      const body = await env.DATA.get(PAGE_KEY);
+      const body = await env.DATA.get(key);
       if (!body) return plain(404, "Not found");
       return new Response(body.body, { status: 200, headers });
     }

@@ -79,7 +79,8 @@ index: build
 SERVE_PORT ?= 8080
 serve: build
 	@echo "viewer:  http://localhost:$(SERVE_PORT)/"
-	@echo "explore: http://localhost:$(SERVE_PORT)/explore.html"
+	@echo "app:     http://localhost:$(SERVE_PORT)/bay.html"
+	@echo "chapters: http://localhost:$(SERVE_PORT)/finding.html"
 	@echo "rasters: http://localhost:$(SERVE_PORT)/data/index.json"
 	$(COMPOSE) run --rm \
 		-p "127.0.0.1:$(SERVE_PORT):$(SERVE_PORT)" \

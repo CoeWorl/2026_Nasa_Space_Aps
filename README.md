@@ -219,28 +219,36 @@ http://localhost:8080/?api=https://groundtruth-api.groundtruth-api.workers.dev
 
 The endpoint is public and unauthenticated, which suits NASA open data.
 
-### The explore app (temporal views)
+### The app (temporal views)
 
-`seed.sh` also uploads the data products and the `explore.html` page, so the
-Worker serves the whole temporal app from one origin:
+`seed.sh` also uploads the data products and the app pages, so the Worker
+serves the whole temporal app from one origin:
 
 | URL | Serves |
 |---|---|
-| `/explore.html` | the page, from R2 key `app/explore.html` |
+| `/` and `/bay.html` | the baseline explorer: Discover, Explore, Compare, Evidence over one selection |
+| `/finding.html` … `/context.html` | the eight analysis chapters, from R2 keys `app/<name>.html` |
+| `/atlas.css`, `/atlas.js` | the chapters' shared chrome and data layer |
+| `/api` | the JSON endpoint list that used to live at `/` |
 | `/data-app/<name>.json` | a data product, aliased to R2 key `data/app/<name>` |
 
-The products come from `tide_adjust.py`; regenerate and reseed with:
+The page routes are an allowlist in `src/index.ts`: a new page in `web/` has to
+be named there as well as seeded, or it 404s.
+
+The products come from `tide_adjust.py` and `make_robustness.py`; regenerate and
+reseed with:
 
 ```bash
 uv run --project backend python -u backend/scripts/tide_adjust.py --out-dir data/processed/jamaica_bay/app
+uv run --project backend python -u backend/scripts/make_robustness.py --app-dir data/processed/jamaica_bay/app
 cd cloudflare && ./seed.sh --remote        # or ./seed.sh for local simulated R2
 npx wrangler deploy                        # or npx wrangler dev
 ```
 
-Then open `https://groundtruth-api.groundtruth-api.workers.dev/explore.html`.
+Then open `https://groundtruth-api.groundtruth-api.workers.dev/finding.html`.
 The page defaults to a same-origin `./data-app/` base, so no query string is
 needed; pass `?data=<url>` only to point it at a different host. Locally,
-`make serve` serves the same page at `http://localhost:8080/explore.html`.
+`make serve` serves the same pages at `http://localhost:8080/finding.html`.
 
 ### Verified behaviour
 
@@ -253,7 +261,7 @@ needed; pass `?data=<url>` only to point it at a different host. Locally,
 | `data/../secrets/netrc` | 404 |
 | Cross-origin from the viewer | CORS headers present, 206 responses |
 | Same pixel: local file, local R2, deployed R2 | `-5.92 dB`, linear `0.2559852600097656`, pixel 597,1552 |
-| `/explore.html` | 200 `text/html` from R2 |
+| `/` and `/bay.html` | 200 `text/html` from R2 |
 | `/data-app/models.json` | 200 `application/json`, descending slope `-0.914 dB/m` |
 | `/data-app/regions.geojson` | 200 `application/geo+json` |
 | `Range: bytes=0-99` on a product | 206 |
