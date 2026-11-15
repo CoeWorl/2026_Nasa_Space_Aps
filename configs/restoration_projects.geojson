@@ -1,0 +1,126 @@
+{
+  "type": "FeatureCollection",
+  "note": "Restoration context only. No verified project boundaries are held, so project_boundary is null and no radar statistics are computed per project. Point geometries are OpenStreetMap place locators for the named park or creek, not project footprints. Every status is evidence as of status_as_of, not a guarantee about later dates.",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {"type": "Point", "coordinates": [-73.8603, 40.6591]},
+      "properties": {
+        "project_id": "spring_creek_north",
+        "project_name": "Spring Creek North Ecosystem Restoration",
+        "agency": "USACE New York District with NYC Parks",
+        "project_type": "tidal wetland and habitat restoration",
+        "published_status": "construction contract awarded; reported moving forward",
+        "status_as_of": "2025-09-17",
+        "project_boundary": null,
+        "geometry_kind": "approximate locator (OSM: Spring Creek Park, Queens)",
+        "construction_start": null,
+        "construction_end": null,
+        "construction_notes": "Contract award notice gives an estimated completion of 2027-02-28. A start date of 2025-08-26 was claimed in project notes but not confirmed against a USACE page.",
+        "restoration_goal": "Restore degraded parkland to tidal wetland and upland habitat. Sources disagree on area: 47 acres (2018 agreement) and 43 acres (2025 report).",
+        "source_url": "https://dredgewire.com/hl-contracting-awarded-a-17-7-million-contract-for-spring-creek-north-ecosystem-restoration-project/",
+        "verification": "partly verified"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {"type": "Point", "coordinates": [-73.9053, 40.6011]},
+      "properties": {
+        "project_id": "four_sparrow_marsh",
+        "project_name": "Four Sparrow Marsh wetland improvement",
+        "agency": "NYC DEP (funding), NYC DDC (delivery), NYC Parks",
+        "project_type": "tidal wetland restoration (mitigation)",
+        "published_status": "completed",
+        "status_as_of": "2025-07-31",
+        "project_boundary": null,
+        "geometry_kind": "approximate locator (OSM: Four Sparrow Marsh)",
+        "construction_start": null,
+        "construction_end": "2025-07",
+        "construction_notes": "Completed before the first NISAR acquisition used here (November 2025), so this archive holds no pre-restoration baseline.",
+        "restoration_goal": "Restore nearly three acres of tidal wetland in Mill Basin; $7 million.",
+        "source_url": "https://www.nyc.gov/site/dep/news/25-026/city-completes-7-million-wetland-improvement-project-brooklyn-s-four-sparrow-marsh",
+        "verification": "verified"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {"type": "Point", "coordinates": [-73.7726, 40.6127]},
+      "properties": {
+        "project_id": "bayswater_point",
+        "project_name": "Bayswater Point State Park shoreline enhancement",
+        "agency": "New York State Parks with NYS DEC and Jamaica Bay-Rockaway Parks Conservancy",
+        "project_type": "living shoreline, tidal marsh restoration, breakwaters",
+        "published_status": "announced; construction stated to begin spring 2026",
+        "status_as_of": "2026-06-02",
+        "project_boundary": null,
+        "geometry_kind": "approximate locator (OSM: Bayswater Point State Park)",
+        "construction_start": null,
+        "construction_end": null,
+        "construction_notes": "No completion date published in the announcement.",
+        "restoration_goal": "About 2,000 linear feet of living shoreline, five acres of tidal marsh, offshore breakwaters; $15 million.",
+        "source_url": "https://www.longisland.com/news/06-02-26/governor-hochul-announces-15-million-project-to-enhance-shoreline-at-bayswater-point-state-park-in-queens.html",
+        "verification": "verified from a republished state announcement"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": null,
+      "properties": {
+        "project_id": "stony_creek_marsh_island",
+        "project_name": "HRE Stony Creek Marsh Island Restoration",
+        "agency": "USACE New York District with NYC DEP",
+        "project_type": "marsh island restoration",
+        "published_status": "designing; USACE work reported temporarily paused",
+        "status_as_of": "2026-03-31",
+        "project_boundary": null,
+        "geometry_kind": "none held",
+        "construction_start": null,
+        "construction_end": null,
+        "construction_notes": "Design agreement executed 2022-07-28. NYC DEP's 2026 first-quarter report describes the USACE marsh-island work as temporarily paused. Not an active construction project.",
+        "restoration_goal": "About 50 acres of marsh island.",
+        "source_url": "https://www.nan.usace.army.mil/Media/Fact-Sheets/Fact-Sheet-Article-View/Article/647240/fact-sheet-hudson-raritan-estuary-restoration-ny-and-nj/",
+        "verification": "verified"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": null,
+      "properties": {
+        "project_id": "duck_point_marsh_island",
+        "project_name": "HRE Duck Point Marsh Island Restoration",
+        "agency": "USACE New York District with NYC DEP",
+        "project_type": "marsh island restoration",
+        "published_status": "designing; USACE work reported temporarily paused",
+        "status_as_of": "2026-03-31",
+        "project_boundary": null,
+        "geometry_kind": "none held",
+        "construction_start": null,
+        "construction_end": null,
+        "construction_notes": "Design agreement executed 2024-05-29. Reported temporarily paused in NYC DEP's 2026 first-quarter report.",
+        "restoration_goal": "About 47 acres of marsh island habitat.",
+        "source_url": "https://www.nan.usace.army.mil/Media/Fact-Sheets/Fact-Sheet-Article-View/Article/647240/fact-sheet-hudson-raritan-estuary-restoration-ny-and-nj/",
+        "verification": "verified"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {"type": "Point", "coordinates": [-73.8803, 40.6399]},
+      "properties": {
+        "project_id": "fresh_creek",
+        "project_name": "HRE Fresh Creek Restoration",
+        "agency": "USACE New York District with NYC DEP",
+        "project_type": "tidal creek habitat restoration",
+        "published_status": "designing; USACE work reported temporarily paused",
+        "status_as_of": "2026-03-31",
+        "project_boundary": null,
+        "geometry_kind": "approximate locator (OSM: Fresh Creek tidal channel)",
+        "construction_start": null,
+        "construction_end": null,
+        "construction_notes": "Design agreement executed 2024-05-29. Reported temporarily paused in NYC DEP's 2026 first-quarter report.",
+        "restoration_goal": "About 80 acres of habitat within the creek.",
+        "source_url": "https://www.nan.usace.army.mil/Media/Fact-Sheets/Fact-Sheet-Article-View/Article/647240/fact-sheet-hudson-raritan-estuary-restoration-ny-and-nj/",
+        "verification": "verified"
+      }
+    }
+  ]
+}
