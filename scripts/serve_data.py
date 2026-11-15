@@ -29,7 +29,8 @@ DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/data")).resolve() / "interim"
 # The small JSON/GeoJSON data products for explore.html, served read-only at
 # /data-app/. A third explicit root, for the same reason as the other two.
 APP_ROOT = (DATA_ROOT.parent / "processed" / "jamaica_bay" / "app").resolve()
-PORT = int(os.environ.get("SERVE_PORT", "8080"))
+# SERVE_PORT is the repo's own name for it; PORT is what most launchers set.
+PORT = int(os.environ.get("SERVE_PORT") or os.environ.get("PORT") or "8080")
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",

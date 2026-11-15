@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GROUNDTRUTH 02 — One observation</title>
+<link rel="stylesheet" href="atlas.css" />
+</head>
+<body>
+<div class="page">
+  <header class="mast">
+    <div id="locator" aria-hidden="true"></div>
+    <div>
+      <p class="kicker">Groundtruth / Jamaica Bay / 02</p>
+      <h1>The satellite catches moments</h1>
+      <p class="deck">Where the measurement comes from: one acquisition, two gauges, one instant of a moving tide.</p>
+    </div>
+  </header>
+  <div id="app"></div>
+</div>
+<script src="atlas.js"></script>
+<script>
+"use strict";
+(function () {
+  // Page-local view state. Nothing here changes a model; these only change
+  // what is drawn, which is why they are not in the shared URL state.
+  var view = { calendar: "timeline", filter: "both" };
+
+  ATLAS.boot("observe", function (ctx) {
+    var A = ATLAS, host = ctx.host, p = A.BYID[A.state.selected];
+
+    host.appendChild(A.h("p", "lede",
+      "The tide in Jamaica Bay swings twice a day. NISAR returns on each track every twelve days and samples one " +
+      "instant of that rhythm. Everything measured on the later pages comes from acquisitions like this one, so it " +
+      "is worth seeing what a single observation actually is. Click any mark on this page — or any later page — to " +
+      "change the selection; it follows you across chapters."));
+
+    var s1 = A.h("section", "tight");
+    host.appendChild(s1);
+    var stage = A.h("div", "stage"), left = A.h("div"), right = A.h("div");
+    stage.appendChild(left); stage.appendChild(right);
+    s1.appendChild(stage);
+
+    var wrap = A.drawMap(left);
+    A.drawStaff(wrap, p);
+    left.appendChild(A.h("div", "evidence",
+      '<span class="tier primary">primary</span><b>measured</b> · HH · ' +
+      (A.BASE ? A.BASE.regions.length : "—") + " marsh polygons from OpenStreetMap (not the National Wetlands Inventory) · " +
+      "the upland reference is a brightness proxy, not a landcover class · the bay-wide value is a median across polygons"));
+
+    drawObservation(right, p);
+    drawHydro(right, p);
+
+    var s2 = A.h("section");
+    host.appendChild(s2);
+    drawCalendar(s2, p);
+
+    // --- the selected acquisition, with its metadata defined -----------------
+    function drawObservation(hostEl, p) {
+      var o = A.ORBITS[p.orbit], e = p.env, a = p.acq, box = A.h("div", "obs");
+      var t = a.timestamp_utc ? new Date(a.timestamp_utc) : null;
+      var local = t ? t.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", timeZoneName: "short" }) : "";
+      var offs = e.time_offset_seconds ? Object.keys(e.time_offset_seconds).map(function (k) { return Math.abs(e.time_offset_seconds[k]); }) : [];
+      var off = offs.length ? Math.max.apply(null, offs) : null;
+      var gaugeGap = (e.usgs_inwood_water_level_m_navd88 != null && e.usgs_rockaway_water_level_m_navd88 != null)
+        ? e.usgs_inwood_water_level_m_navd88 - e.usgs_rockaway_water_level_m_navd88 : null;
+      box.innerHTML =
+        "<h3>Selected observation</h3>" +
+        '<div class="date">' + A.im(p.orbit, !p.ok) + " " + A.fmtDate(p.t) + "</div>" +
+        '<div style="color:var(--muted);font-size:13px">' + o.label + ' · <span class="mono">' +
+          (t ? t.toISOString().slice(11, 16) + " UTC" : "") + "</span> (" + local + ")</div>" +
+        '<div class="big">' + A.sgn(p.h) + " m</div>" +
+        '<div class="unit">' + A.def("observed water level, NAVD88",
+          "North American Vertical Datum of 1988. Observed, not predicted: the reading each USGS gauge recorded nearest the overpass.") +
+          " · mean of two gauges</div>" +
+        '<dl class="facts">' +
+        "<dt>" + A.def("Marsh − upland, HH", "Median HH backscatter over the marsh polygons minus median HH over the upland reference, both in dB. HH is horizontally transmitted, horizontally received.") + "</dt><dd>" + A.fx(p.y) + " dB</dd>" +
+        "<dt>Marsh − upland, HV</dt><dd>" + A.fx(p.yhv) + " dB</dd>" +
+        "<dt>Marsh HH, raw</dt><dd>" + A.fx(p.hh) + " dB</dd>" +
+        "<dt>Inwood / Rockaway</dt><dd>" + A.sgn(e.usgs_inwood_water_level_m_navd88) + " / " + A.sgn(e.usgs_rockaway_water_level_m_navd88) + " m</dd>" +
+        "<dt>" + A.def("Gauge disagreement", "Inwood minus Rockaway at this overpass. h is their mean, so this is the spread the predictor is averaging over.") + "</dt><dd>" + A.sgn(gaugeGap) + " m</dd>" +
+        "<dt>" + A.def("Gauge reading offset", "How far the nearest gauge reading was from the overpass time. The gauges report about every six minutes; nothing is interpolated.") + "</dt><dd>" + (off != null ? (off / 60).toFixed(1) + " min" : "—") + "</dd>" +
+        "<dt>" + A.def("Marsh / upland coverage", "Fraction of the 10 m pixels inside the marsh polygons, and inside the upland reference, that carry a valid backscatter value on this acquisition. The screen keeps a pass when both are at least 90%.") + "</dt><dd>" +
+          (a.marsh_coverage_fraction != null ? A.pct(a.marsh_coverage_fraction) + " / " + A.pct(a.upland_coverage_fraction) : "—") + "</dd>" +
+        "<dt>Wind, rain (daily)</dt><dd>" + (e.wind_speed_mps_daily_avg == null ? "—" : e.wind_speed_mps_daily_avg) + " m/s, " +
+          (e.precip_mm_daily == null ? "—" : e.precip_mm_daily) + " mm</dd></dl>" +
+        (e.quality_flags && e.quality_flags.length
+          ? '<div style="margin-top:8px">' + e.quality_flags.map(function (f) { return '<span class="flag">' + f.replace(/_/g, " ") + "</span>"; }).join("") + "</div>"
+          : "") +
+        (p.ok ? "" : '<div class="callout" style="margin-top:14px">This pass <b>failed the coverage screen</b>: its bay-wide median ' +
+          "describes a different set of pixels from the other dates. It is kept visible everywhere, and chapter 03 shows " +
+          "what including it does to the ascending slope.</div>");
+      hostEl.appendChild(box);
+    }
+
+    // --- the gauge curves either side of the overpass ------------------------
+    function drawHydro(hostEl, p) {
+      var acq = A.HYDRO.acquisitions[p.id], box = A.h("div");
+      box.style.marginTop = "26px";
+      hostEl.appendChild(box);
+      box.appendChild(A.h("h3", null, "The water keeps moving"));
+      if (!acq) { box.appendChild(A.h("p", "cap", "No gauge curve for this acquisition.")); return; }
+      var W = 420, H = 215, P = { l: 42, r: 58, t: 16, b: 32 };
+      var G = [["inwood", A.INK, "0"], ["rockaway", "#5b8f8a", "5 3"]];
+      var lv = [];
+      G.forEach(function (g) { lv = lv.concat(acq.gauges[g[0]].water_level_m); });
+      var ys = A.ext(lv), pad = (ys[1] - ys[0]) * 0.12 || 0.1;
+      var x = A.scale(-780, 780, P.l, W - P.r), y = A.scale(ys[0] - pad, ys[1] + pad, H - P.b, P.t);
+      var svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Observed water level for 13 hours either side of the overpass" });
+      A.axes(svg, x, y, P, W, H, [-720, -360, 0, 360, 720], A.ticks(ys[0] - pad, ys[1] + pad, 4),
+        function (t) { return t === 0 ? "overpass" : (t > 0 ? "+" : "−") + Math.abs(t) / 60 + " h"; },
+        function (t) { return A.fx(t, 1); });
+      svg.appendChild(A.el("text", { class: "axl", x: P.l, y: P.t - 4 }, "water level (m NAVD88)"));
+      G.forEach(function (g, gi) {
+        var o = acq.gauges[g[0]].offset_min, v = acq.gauges[g[0]].water_level_m;
+        if (!o.length) return;
+        svg.appendChild(A.el("path", {
+          d: o.map(function (t, i) { return (i ? "L" : "M") + x(t).toFixed(1) + " " + y(v[i]).toFixed(1); }).join(""),
+          fill: "none", stroke: g[1], "stroke-width": 1.5, "stroke-dasharray": g[2] === "0" ? null : g[2]
+        }));
+        svg.appendChild(A.el("text", { x: W - P.r + 4, y: y(v[v.length - 1]) + 3.5 + (gi ? 9 : -3), fill: g[1], style: "font:10px var(--sans)" },
+          g[0][0].toUpperCase() + g[0].slice(1)));
+      });
+      svg.appendChild(A.el("line", { x1: x(0), x2: x(0), y1: P.t - 4, y2: H - P.b, stroke: A.SEL, "stroke-width": 1 }));
+      // The value the regression actually uses is the mean of the two gauges,
+      // so it is drawn as its own mark rather than left implicit.
+      svg.appendChild(A.mark(p, x(0), y(p.h), { r: 4.6, sel: true, click: false, title: "Overpass: mean of the two gauges, " + A.fx(p.h) + " m" }));
+      box.appendChild(svg);
+      box.appendChild(A.h("p", "cap",
+        "Both gauges for 13 hours either side of the pass — solid is Inwood, dashed is Rockaway. The highlighted mark " +
+        "is the one instant NISAR sampled, at " + A.sgn(p.h) + " m, which is the <b>mean of the two gauge readings</b> " +
+        "and the value every regression on these pages uses as its predictor."));
+      box.appendChild(A.h("div", "evidence",
+        '<span class="tier primary">primary</span><b>measured</b> · USGS 01311850 (Inwood) and 01311875 (Rockaway) · ' +
+        "observed water level, not a tide prediction · readings about every 6 minutes · nothing interpolated"));
+    }
+
+    // --- every acquisition, by date and by tide ------------------------------
+    function drawCalendar(hostEl, p) {
+      var all = A.PTS.descending_069.concat(A.PTS.ascending_133);
+      var shown = all.filter(function (q) { return view.filter === "both" || q.orbit === view.filter; });
+      var same = A.PTS[p.orbit].filter(function (q) { return q.id !== p.id; });
+      var byTime = same.slice().sort(function (a, b) { return Math.abs(a.t - p.t) - Math.abs(b.t - p.t); })[0];
+      var byTide = same.slice().sort(function (a, b) { return Math.abs(a.h - p.h) - Math.abs(b.h - p.h); })[0];
+
+      hostEl.appendChild(A.h("h2", null, "Every pass, by date and by tide"));
+      hostEl.appendChild(A.h("p", "prose",
+        "Across is the calendar; up is the water level the gauges read at the overpass. Passes that sit side by side " +
+        "in time are often far apart in tide, which is the whole reason the tide has to be accounted for before two " +
+        "dates are compared. Two views: the <b>timeline</b> answers when the satellite came, and the " +
+        "<b>tide distribution</b> answers how well those visits sampled the range of water levels."));
+
+      var ctl = A.h("div", "ctl");
+      ctl.innerHTML =
+        '<span class="ctl-label">View</span><span class="seg" id="cal-mode">' +
+          '<button data-m="timeline" aria-pressed="' + (view.calendar === "timeline") + '">Timeline</button>' +
+          '<button data-m="distribution" aria-pressed="' + (view.calendar === "distribution") + '">Tide distribution</button></span>' +
+        '<span class="ctl-label">Show</span><span class="seg" id="cal-filter">' +
+          '<button data-f="both" aria-pressed="' + (view.filter === "both") + '">Both</button>' +
+          '<button data-f="descending_069" aria-pressed="' + (view.filter === "descending_069") + '">Descending</button>' +
+          '<button data-f="ascending_133" aria-pressed="' + (view.filter === "ascending_133") + '">Ascending</button></span>';
+      hostEl.appendChild(ctl);
+      ctl.querySelector("#cal-mode").onclick = function (e) {
+        var b = e.target.closest("button"); if (b) { view.calendar = b.dataset.m; A.redraw(); }
+      };
+      ctl.querySelector("#cal-filter").onclick = function (e) {
+        var b = e.target.closest("button"); if (b) { view.filter = b.dataset.f; A.redraw(); }
+      };
+
+      if (view.calendar === "timeline") timeline(hostEl, p, shown, byTime, byTide);
+      else distribution(hostEl, p, shown);
+
+      hostEl.appendChild(A.h("div", "evidence",
+        '<span class="tier primary">primary</span><b>measured</b> · ' + A.PTS.descending_069.length + " descending and " +
+        A.PTS.ascending_133.length + " ascending passes · one record per physical acquisition, duplicate processing " +
+        "versions dropped · water level observed within minutes of each · click any mark to select it"));
+    }
+
+    function timeline(hostEl, p, shown, byTime, byTide) {
+      var W = 1120, H = 290, P = { l: 48, r: 16, t: 16, b: 32 };
+      var ts = A.ext(A.PTS.descending_069.concat(A.PTS.ascending_133).map(function (q) { return q.t; }));
+      var x = A.scale(ts[0] - 8 * 864e5, ts[1] + 8 * 864e5, P.l, W - P.r), y = A.scale(-1.0, 1.25, H - P.b, P.t);
+      var svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, role: "group", "aria-label": "All acquisitions by date and water level" });
+      A.axes(svg, x, y, P, W, H, A.monthTicks(ts[0], ts[1]), [-1, -0.5, 0, 0.5, 1], A.monthFmt, function (t) { return A.sgn(t, 1); });
+      svg.appendChild(A.el("line", { x1: P.l, x2: W - P.r, y1: y(0), y2: y(0), stroke: A.INK, "stroke-width": 1 }));
+      svg.appendChild(A.el("text", { x: W - P.r, y: y(0) - 5, "text-anchor": "end", class: "axl" }, "NAVD88 datum (0 m)"));
+      svg.appendChild(A.el("text", { x: P.l, y: P.t - 4, class: "axl" }, "water level at overpass (m NAVD88)"));
+
+      // Selection state: the two neighbours are named on the plot, and
+      // everything unrelated fades, so the links do not have to be decoded
+      // from the caption.
+      var related = {};
+      related[p.id] = 1; related[byTime.id] = 1; related[byTide.id] = 1;
+      // When the two neighbours are the same pass the labels would collide, so
+      // they are stacked above and below the link instead.
+      var sameNeighbour = byTime.id === byTide.id;
+      [[byTime, "0", "nearest in date", -8], [byTide, "6 4", "nearest in water level", sameNeighbour ? 16 : -8]].forEach(function (pair) {
+        var q = pair[0];
+        svg.appendChild(A.el("line", { x1: x(p.t), y1: y(p.h), x2: x(q.t), y2: y(q.h), stroke: A.SEL, "stroke-width": 1.4, "stroke-dasharray": pair[1] === "0" ? null : pair[1] }));
+        var mx = (x(p.t) + x(q.t)) / 2, my = (y(p.h) + y(q.h)) / 2;
+        svg.appendChild(A.el("text", { x: mx, y: my + pair[3], "text-anchor": "middle", class: "lab", stroke: A.PAPER, "stroke-width": 3.2, "paint-order": "stroke", style: "font-size:10.5px" }, pair[2]));
+      });
+      shown.forEach(function (q) {
+        if (q.id === A.state.selected) return;
+        svg.appendChild(A.mark(q, x(q.t), y(q.h), { r: q.orbit === p.orbit ? 4.4 : 3.6, fade: !related[q.id] }));
+      });
+      svg.appendChild(A.mark(p, x(p.t), y(p.h), { sel: true }));
+      hostEl.appendChild(svg);
+
+      var card = A.h("div");
+      card.style.cssText = "display:flex;gap:28px;flex-wrap:wrap;margin-top:10px";
+      [["Selected", p.date, A.sgn(p.h) + " m", ""],
+       ["Nearest in date", byTime.date, A.sgn(byTime.h) + " m", A.days(byTime.t, p.t) + " days · Δh " + A.sgn(byTime.h - p.h)],
+       ["Nearest in water level", byTide.date, A.sgn(byTide.h) + " m", A.days(byTide.t, p.t) + " days · Δh " + A.sgn(byTide.h - p.h)]
+      ].forEach(function (r) {
+        card.appendChild(A.h("div", null,
+          "<h4 style=\"margin:0 0 2px\">" + r[0] + '</h4><div class="mono" style="font-size:13px">' + r[1] + " · " + r[2] +
+          '</div><div class="mono" style="font-size:11.5px;color:var(--muted)">' + r[3] + "</div>"));
+      });
+      hostEl.appendChild(card);
+      hostEl.appendChild(A.h("p", "cap",
+        "Only the selected pass and its two neighbours are drawn at full strength; everything else is faded to keep " +
+        "the comparison legible. The nearest pass in time and the nearest pass in water level are usually different " +
+        "passes, which is what makes a tide-matched comparison (chapter 07) a different question from a " +
+        "before-and-after one."));
+    }
+
+    function distribution(hostEl, p, shown) {
+      var W = 1120, H = 300, P = { l: 120, r: 24, t: 20, b: 36 };
+      var x = A.scale(-1.0, 1.25, P.l, W - P.r);
+      var svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, role: "group", "aria-label": "Water level sampled by each track" });
+      var tracks = view.filter === "both" ? ["descending_069", "ascending_133"] : [view.filter];
+      var bins = 18, lo = -1.0, hi = 1.25, step = (hi - lo) / bins;
+      tracks.forEach(function (orbit, k) {
+        var band = (H - P.t - P.b) / tracks.length, y0 = P.t + k * band;
+        var pts = A.PTS[orbit];
+        svg.appendChild(A.el("text", { x: P.l - 12, y: y0 + 16, "text-anchor": "end", class: "lab", style: "font-weight:600" }, A.ORBITS[orbit].label));
+        svg.appendChild(A.el("text", { x: P.l - 12, y: y0 + 30, "text-anchor": "end", class: "axl" }, pts.length + " passes"));
+        // One histogram of the water levels actually sampled, with each pass
+        // stacked as its own mark: the count and the individuals at once.
+        var counts = {};
+        pts.forEach(function (q) {
+          var b = Math.min(bins - 1, Math.max(0, Math.floor((q.h - lo) / step)));
+          counts[b] = (counts[b] || 0) + 1;
+          var yy = y0 + band - 26 - (counts[b] - 1) * 10;
+          svg.appendChild(A.mark(q, x(lo + (b + 0.5) * step), yy, { r: 4.2, sel: q.id === A.state.selected, fade: q.orbit !== p.orbit && view.filter === "both" && false }));
+        });
+        svg.appendChild(A.el("line", { x1: P.l, x2: W - P.r, y1: y0 + band - 16, y2: y0 + band - 16, stroke: A.RULE }));
+      });
+      [-1, -0.5, 0, 0.5, 1].forEach(function (t) {
+        svg.appendChild(A.el("line", { x1: x(t), x2: x(t), y1: P.t, y2: H - P.b, stroke: t === 0 ? A.INK : A.RULE, "stroke-width": t === 0 ? 1.2 : 1 }));
+        svg.appendChild(A.el("text", { x: x(t), y: H - P.b + 16, "text-anchor": "middle", class: "labm", style: "font-size:10.5px" }, A.sgn(t, 1)));
+      });
+      svg.appendChild(A.el("text", { x: (P.l + W - P.r) / 2, y: H - 6, "text-anchor": "middle", class: "axl" }, "water level at overpass (m NAVD88), 0.125 m bins"));
+      hostEl.appendChild(svg);
+
+      var stats = tracks.map(function (orbit) {
+        var hs = A.PTS[orbit].map(function (q) { return q.h; });
+        var e = A.ext(hs);
+        return A.ORBITS[orbit].label + ": range " + A.sgn(e[0]) + " to " + A.sgn(e[1]) + " m, median " + A.sgn(A.median(hs)) + " m";
+      }).join(" · ");
+      hostEl.appendChild(A.h("p", "cap",
+        "Each mark is one pass, stacked where it falls. This is the view that shows sampling balance: a slope " +
+        "estimated over a narrow band of water levels would be an extrapolation everywhere else. " + stats + ". " +
+        "A sun-synchronous orbit visits at a fixed local time, so the sampled levels are not a random sample of the tide."));
+    }
+  });
+})();
+</script>
+</body>
+</html>
