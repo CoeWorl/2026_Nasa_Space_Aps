@@ -219,28 +219,35 @@ http://localhost:8080/?api=https://groundtruth-api.groundtruth-api.workers.dev
 
 The endpoint is public and unauthenticated, which suits NASA open data.
 
-### The explore app (temporal views)
+### The atlas (temporal views)
 
-`seed.sh` also uploads the data products and the `explore.html` page, so the
-Worker serves the whole temporal app from one origin:
+`seed.sh` also uploads the data products and the atlas pages, so the Worker
+serves the whole temporal app from one origin:
 
 | URL | Serves |
 |---|---|
-| `/explore.html` | the page, from R2 key `app/explore.html` |
+| `/finding.html` … `/context.html` | the eight atlas chapters, from R2 keys `app/<name>.html` |
+| `/atlas.css`, `/atlas.js` | the shared chrome and data layer |
+| `/explore.html` | the legacy one-pager, unchanged |
 | `/data-app/<name>.json` | a data product, aliased to R2 key `data/app/<name>` |
 
-The products come from `tide_adjust.py`; regenerate and reseed with:
+The page routes are an allowlist in `src/index.ts`: a new page in `web/` has to
+be named there as well as seeded, or it 404s.
+
+The products come from `tide_adjust.py` and `make_robustness.py`; regenerate and
+reseed with:
 
 ```bash
 uv run --project backend python -u backend/scripts/tide_adjust.py --out-dir data/processed/jamaica_bay/app
+uv run --project backend python -u backend/scripts/make_robustness.py --app-dir data/processed/jamaica_bay/app
 cd cloudflare && ./seed.sh --remote        # or ./seed.sh for local simulated R2
 npx wrangler deploy                        # or npx wrangler dev
 ```
 
-Then open `https://groundtruth-api.groundtruth-api.workers.dev/explore.html`.
+Then open `https://groundtruth-api.groundtruth-api.workers.dev/finding.html`.
 The page defaults to a same-origin `./data-app/` base, so no query string is
 needed; pass `?data=<url>` only to point it at a different host. Locally,
-`make serve` serves the same page at `http://localhost:8080/explore.html`.
+`make serve` serves the same pages at `http://localhost:8080/finding.html`.
 
 ### Verified behaviour
 

@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GROUNDTRUTH 07 — Tide-matched</title>
+<link rel="stylesheet" href="atlas.css" />
+</head>
+<body>
+<div class="page">
+  <header class="mast">
+    <div id="locator" aria-hidden="true"></div>
+    <div>
+      <p class="kicker">Groundtruth / Jamaica Bay / 07</p>
+      <h1>Which passes are comparable?</h1>
+      <p class="deck">Before two dates can be compared, they have to have seen the same water.</p>
+    </div>
+  </header>
+  <div id="app"></div>
+</div>
+<script src="atlas.js"></script>
+<script>
+"use strict";
+(function () {
+  var view = { open: false };
+
+  ATLAS.boot("matched", function (ctx) {
+    var A = ATLAS, host = ctx.host;
+    var orbit = A.state.orbit, o = A.ORBITS[orbit], m = A.model(orbit);
+    var adj = {};
+    m.per_date.forEach(function (d) { adj[d.date] = d.y_adj_in_sample_db; });
+    var pool = A.fitPoints(orbit);
+    var ref = pool.filter(function (p) { return p.id === A.state.selected; })[0] || pool[0];
+    var thr = A.state.matchThresh;
+
+    var rows = pool.filter(function (p) { return p.id !== ref.id; }).map(function (p) {
+      return {
+        p: p, dh: p.h - ref.h, dy: p.y - ref.y,
+        da: (adj[p.date] != null && adj[ref.date] != null) ? adj[p.date] - adj[ref.date] : null,
+        dd: Math.round((p.t - ref.t) / 864e5)
+      };
+    }).sort(function (a, b) { return Math.abs(a.dh) - Math.abs(b.dh); });
+    var near = rows.filter(function (r) { return Math.abs(r.dh) <= thr; });
+    var far = rows.filter(function (r) { return Math.abs(r.dh) > thr; });
+    function med(list, key) { return A.median(list.map(function (r) { return Math.abs(r[key]); })); }
+
+    host.appendChild(A.h("p", "lede",
+      "Chapters 03 to 05 model the tide and subtract it. This chapter does the simpler, more auditable thing: it " +
+      "finds the passes that happened to catch the same water level, and asks how much they differ anyway. " +
+      "If water level is the dominant nuisance, <b>tide-matched passes should agree much more closely than " +
+      "arbitrary pairs</b> — and the leftover difference is the floor on what any change-detection claim can resolve."));
+
+    // --- the comparison, stated first ------------------------------------------
+    var card = A.h("div", "finding");
+    card.appendChild(A.h("h3", null, "Reference pass " + ref.date));
+    if (near.length) {
+      card.appendChild(A.h("p", null,
+        "<b>" + near.length + " of " + rows.length + "</b> other " + o.short + " passes saw water within " +
+        "±<span class=\"num\">" + thr.toFixed(2) + "</span> m of this one's " +
+        "<span class=\"num\">" + A.sgn(ref.h) + "</span> m. Against those the median absolute backscatter " +
+        "difference is <span class=\"num\">" + A.fx(med(near, "dy")) + "</span> dB" +
+        (far.length ? "; against the remaining " + far.length + " it is <span class=\"num\">" + A.fx(med(far, "dy")) + "</span> dB" : "") +
+        ". Those matched passes are a median of <span class=\"num\">" + A.median(near.map(function (r) { return Math.abs(r.dd); })).toFixed(0) +
+        "</span> days away in time, so this is not a before-and-after comparison — it is a same-tide one."));
+    } else {
+      card.appendChild(A.h("p", null,
+        "No other " + o.short + " pass saw water within ±<span class=\"num\">" + thr.toFixed(2) + "</span> m of this " +
+        "one. The closest is " + rows[0].p.date + ", <span class=\"num\">" + A.fx(Math.abs(rows[0].dh)) + "</span> m away. " +
+        "Widen the tolerance, or select a pass nearer the middle of the tidal range."));
+    }
+    card.appendChild(A.h("p", null,
+      "<b>This is descriptive, not a test.</b> Every row shares the same reference pass, so the differences are not " +
+      "independent of each other and no p-value is quoted. It is shown because it is auditable: each number is a " +
+      "subtraction between two measured acquisitions that you can trace back to its date."));
+    host.appendChild(card);
+
+    // --- controls ---------------------------------------------------------------
+    var ctl = A.h("div", "ctl");
+    ctl.innerHTML =
+      '<span class="ctl-label">Match passes within</span><span class="seg" id="th">' +
+        A.THRESHOLDS.map(function (t) { return '<button data-t="' + t + '" aria-pressed="' + (t === thr) + '">±' + t.toFixed(2) + " m</button>"; }).join("") + "</span>" +
+      '<span class="ctl-label">Track</span><span class="seg" id="ob">' +
+        Object.keys(A.ORBITS).map(function (k) { return '<button data-o="' + k + '" aria-pressed="' + (k === orbit) + '">' + A.ORBITS[k].label + "</button>"; }).join("") + "</span>";
+    host.appendChild(ctl);
+    ctl.querySelector("#th").onclick = function (e) { var b = e.target.closest("button"); if (b) A.set("matchThresh", +b.dataset.t); };
+    ctl.querySelector("#ob").onclick = function (e) {
+      var b = e.target.closest("button");
+      if (b && b.dataset.o !== orbit) A.select(A.fitPoints(b.dataset.o)[0].id);
+    };
+
+    // --- distributions, not just medians -----------------------------------------
+    var s1 = A.h("section", "tight");
+    host.appendChild(s1);
+    s1.appendChild(A.h("h2", null, "Matched against unmatched, every pair drawn"));
+    drawStrips(s1, near, far, thr);
+
+    // --- what the tolerance means --------------------------------------------------
+    var s2 = A.h("section");
+    host.appendChild(s2);
+    var slope = m.regression.slope_db_per_m;
+    var g = A.ROBUST ? A.ROBUST.gauges : null;
+    s2.appendChild(A.h("h2", null, "Is ±" + thr.toFixed(2) + " m a sensible tolerance?"));
+    s2.appendChild(A.h("p", "prose",
+      "It is worth checking rather than assuming. At the fitted slope of <span class=\"num\">" + A.fx(slope) +
+      "</span> dB/m, a mismatch of " + thr.toFixed(2) + " m corresponds to an expected backscatter difference of only " +
+      "<span class=\"num\">" + A.fx(Math.abs(slope) * thr) + "</span> dB — well below the scatter around the fitted " +
+      "line, so passes inside this tolerance really are close to equivalent in tidal terms."));
+    if (g) {
+      s2.appendChild(A.h("p", "prose",
+        "The sharper limit is the predictor itself. <b>The two gauges disagree by a median of " +
+        "<span class=\"num\">" + A.fx(g.median_abs_difference_m) + "</span> m</b>, and by more than 0.10 m on " +
+        g.n_above_0_10_m + " of " + g.n + " overpasses" +
+        (thr <= g.median_abs_difference_m
+          ? " — which is as large as, or larger than, the tolerance you have selected. At ±" + thr.toFixed(2) +
+            " m you are matching on a number whose own spatial uncertainty is comparable, so treat the matched set as " +
+            "indicative rather than exact."
+          : " — smaller than the tolerance you have selected, but not negligible.") +
+        " h is the mean of the two gauges: a single number standing in for a water surface that is not flat across " +
+        "the bay. Chapter 04 plots that disagreement against the three tolerances offered here."));
+    }
+    s2.appendChild(A.h("p", "prose",
+      "Matching on water level controls for water level and <b>nothing else</b>. Season, vegetation state, " +
+      "antecedent rainfall, wind and surface wetness are all free to differ between two tide-matched passes that are " +
+      A.median(near.length ? near.map(function (r) { return Math.abs(r.dd); }) : [0]).toFixed(0) +
+      " days apart. That is why the residual difference between matched passes is a floor on detectable change, " +
+      "not an estimate of measurement noise."));
+
+    // --- the table ---------------------------------------------------------------
+    var s3 = A.h("section");
+    host.appendChild(s3);
+    s3.appendChild(A.h("h2", null, "Every candidate pass, nearest tide first"));
+    s3.appendChild(A.h("p", "prose",
+      "<b>Δh</b> is this pass's water level minus the reference's. <b>ΔY raw</b> is the difference in measured " +
+      "marsh-relative backscatter, a pure subtraction of two measurements. " +
+      "<b>ΔY tide-adjusted</b> is the same difference after each pass has had the fitted tide component removed: " +
+      "<span class=\"mono\">ΔY_adj = (Y_i − β·h_i) − (Y_ref − β·h_ref)</span>, using the all-dates β of " +
+      "<span class=\"num\">" + A.fx(m.tide_adjustment.beta_all_dates_db_per_m) + "</span> dB/m. That β was fitted " +
+      "on these same dates, so the adjusted column is a description, not a prediction — the predictive version " +
+      "lives in chapter 05."));
+    var wrap = A.h("div", "scroll");
+    var t = A.h("table", "tm");
+    var mx = Math.max.apply(null, rows.map(function (r) { return Math.abs(r.dh); }).concat([0.01]));
+    t.innerHTML =
+      "<thead><tr><th>Date</th><th>Days apart</th><th>h (m)</th><th>Δh (m)</th><th>ΔY raw (dB)</th><th>ΔY tide-adjusted (dB)</th></tr></thead><tbody>" +
+      '<tr class="refrow"><td>' + ref.date + " · reference</td><td>0</td><td>" + A.sgn(ref.h) + "</td><td>—</td><td>—</td><td>—</td></tr>" +
+      rows.map(function (r) {
+        return '<tr class="cand' + (Math.abs(r.dh) <= thr ? " near" : "") + '" data-id="' + r.p.id + '" tabindex="0"><td>' +
+          r.p.date + "</td><td>" + A.sgn(r.dd, 0) + "</td><td>" + A.sgn(r.p.h) + "</td>" +
+          '<td><span class="bar" style="width:' + Math.round(40 * Math.abs(r.dh) / mx) + 'px"></span> ' + A.sgn(r.dh) + "</td>" +
+          "<td>" + A.sgn(r.dy) + "</td><td>" + A.sgn(r.da) + "</td></tr>";
+      }).join("") + "</tbody>";
+    t.onclick = function (e) { var tr = e.target.closest("tr.cand"); if (tr) A.select(tr.dataset.id); };
+    t.onkeydown = function (e) { var tr = e.target.closest("tr.cand"); if (tr && e.key === "Enter") A.select(tr.dataset.id); };
+    wrap.appendChild(t);
+    s3.appendChild(wrap);
+    s3.appendChild(A.h("div", "evidence",
+      '<span class="tier exploratory">exploratory</span><b>measured</b> Δh and ΔY raw · <b>modelled</b> ΔY ' +
+      "tide-adjusted, in-sample · " + o.label + " only, " + pool.length + " passes in the fitted set · " +
+      "rows share one reference, so they are not independent comparisons and no test is reported · " +
+      "click any row to make it the reference"));
+
+    // --- the pooled version --------------------------------------------------------
+    var pw = m.tide_adjustment.pairwise_held_out;
+    if (pw) {
+      var s4 = A.h("section");
+      host.appendChild(s4);
+      s4.appendChild(A.h("h2", null, "The same question over every pair, not one reference"));
+      s4.appendChild(A.h("p", "prose",
+        "Choosing one reference pass is convenient for auditing and bad for inference. Over all " +
+        "<span class=\"num\">" + pw.raw.n_pairs + "</span> pairs of held-out acquisitions, the median absolute " +
+        "difference between <b>similar-tide</b> pairs is <span class=\"num\">" + A.fx(pw.raw.median_abs_dy_similar_tide_db) +
+        "</span> dB against <span class=\"num\">" + A.fx(pw.raw.median_abs_dy_different_tide_db) + "</span> dB for " +
+        "different-tide pairs, split at |Δh| = " + A.fx(pw.raw.split_at_abs_dh_m) + " m. " +
+        "The rank correlation between how far apart two passes are in tide and how far apart they are in backscatter " +
+        "is <span class=\"num\">" + A.fx(pw.raw.spearman_dh_dy) + "</span>."));
+      s4.appendChild(A.h("p", "prose",
+        "After the tide adjustment, that same correlation falls to <span class=\"num\">" + A.fx(pw.adjusted.spearman_dh_dy) +
+        "</span> and the two medians converge to <span class=\"num\">" + A.fx(pw.adjusted.median_abs_dy_similar_tide_db) +
+        "</span> and <span class=\"num\">" + A.fx(pw.adjusted.median_abs_dy_different_tide_db) + "</span> dB. " +
+        "In other words, after correction it barely matters whether two passes caught the same tide — which is " +
+        "exactly what a working correction should do, and is the practical payoff of this whole analysis: " +
+        "<b>acquisitions become comparable to each other regardless of when in the tidal cycle they were taken</b>."));
+      s4.appendChild(A.h("div", "evidence",
+        '<span class="tier diagnostic">diagnostic</span><b>modelled</b> · ' + pw.raw.n_pairs +
+        " pairs drawn from the held-out acquisitions · " + (pw.note || "pairs share acquisitions; descriptive only")));
+    }
+
+    // ============================ figure ======================================
+    function drawStrips(hostEl, near, far, thr) {
+      var all = near.concat(far);
+      if (!all.length) { hostEl.appendChild(A.h("p", "cap", "No other passes to compare.")); return; }
+      var W = 1120, H = 230, P = { l: 150, r: 24, t: 24, b: 40 };
+      var e = A.ext(all.map(function (r) { return Math.abs(r.dy); }).concat([0]));
+      var x = A.scale(0, e[1] * 1.08, P.l, W - P.r);
+      var svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, role: "group", "aria-label": "Backscatter differences for matched and unmatched passes" });
+      A.ticks(0, e[1] * 1.08, 5).forEach(function (t) {
+        svg.appendChild(A.el("line", { x1: x(t), x2: x(t), y1: P.t, y2: H - P.b, stroke: A.RULE }));
+        svg.appendChild(A.el("text", { x: x(t), y: H - P.b + 15, "text-anchor": "middle", class: "labm", style: "font-size:10.5px;fill:" + A.MUTED }, A.fx(t, 1)));
+      });
+      svg.appendChild(A.el("text", { x: (P.l + W - P.r) / 2, y: H - 6, "text-anchor": "middle", class: "axl" }, "absolute difference in marsh − upland HH from the reference pass (dB)"));
+      [[near, "Tide-matched", "±" + thr.toFixed(2) + " m", A.MARSH], [far, "The rest", "further apart in tide", A.FAINT]].forEach(function (grp, k) {
+        var list = grp[0], y0 = P.t + k * ((H - P.t - P.b) / 2) + 26;
+        svg.appendChild(A.el("text", { x: P.l - 14, y: y0 + 4, "text-anchor": "end", class: "lab", style: "font-weight:600" }, grp[1] + " (" + list.length + ")"));
+        svg.appendChild(A.el("text", { x: P.l - 14, y: y0 + 17, "text-anchor": "end", class: "axl", style: "font-size:10px" }, grp[2]));
+        svg.appendChild(A.el("line", { x1: P.l, x2: W - P.r, y1: y0, y2: y0, stroke: A.RULE }));
+        if (!list.length) return;
+        var mv = A.median(list.map(function (r) { return Math.abs(r.dy); }));
+        svg.appendChild(A.el("line", { x1: x(mv), x2: x(mv), y1: y0 - 20, y2: y0 + 20, stroke: grp[3], "stroke-width": 2.6 }));
+        svg.appendChild(A.el("text", { x: x(mv), y: y0 - 25, "text-anchor": "middle", class: "lab", style: "font-size:10.5px;font-weight:600" }, "median " + A.fx(mv)));
+        list.forEach(function (r, i) {
+          svg.appendChild(A.mark(r.p, x(Math.abs(r.dy)), y0 + ((i % 2) ? 9 : -9), {
+            r: 4, sel: r.p.id === A.state.selected,
+            title: r.p.date + "\nΔh " + A.sgn(r.dh) + " m · ΔY raw " + A.sgn(r.dy) + " dB · " + A.sgn(r.dd, 0) + " days"
+          }));
+        });
+      });
+      hostEl.appendChild(svg);
+      hostEl.appendChild(A.h("p", "cap",
+        "Each mark is one other pass, placed by how far its backscatter sits from the reference pass. Medians alone " +
+        "would hide the overlap between the two groups, which is substantial: tide matching narrows the typical " +
+        "difference, it does not eliminate it. Click a mark to make that pass the reference."));
+    }
+  });
+})();
+</script>
+</body>
+</html>

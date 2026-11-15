@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Load the GROUNDTRUTH artifacts into an R2 bucket: the analysis rasters,
-# the small JSON/GeoJSON data products, and the explore.html page.
+# the small JSON/GeoJSON data products, and the atlas pages.
 #
 #   ./seed.sh           -> LOCAL simulated R2 (no Cloudflare account needed)
 #   ./seed.sh --remote  -> the real bucket (needs `wrangler login` first)
@@ -15,7 +15,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$here/.." && pwd)"
 raster_dir="$repo_root/data/interim"
 app_dir="$repo_root/data/processed/jamaica_bay/app"
-page="$repo_root/web/explore.html"
+web_dir="$repo_root/web"
 bucket="${R2_BUCKET:-groundtruth-dev}"
 
 target="--local"
@@ -81,11 +81,24 @@ else
   echo ""
 fi
 
-# 3. The explore.html page (optional). Served by the Worker at /explore.html.
-if [ -f "$page" ]; then
-  echo "page from $page"
-  put "$page" "app/explore.html" "text/html"
-  seeded_any=1
+# 3. The atlas pages and their shared assets (optional). Served by the Worker
+# at /<name>, from R2 keys app/<name>. explore.html is the legacy one-pager and
+# is kept here so old links keep working.
+if [ -d "$web_dir" ]; then
+  echo "pages from $web_dir"
+  for f in "$web_dir"/*.html "$web_dir"/atlas.css "$web_dir"/atlas.js; do
+    [ -f "$f" ] || continue
+    name="$(basename "$f")"
+    # index.html is the raster viewer and is served from the worker bundle.
+    [ "$name" = "index.html" ] && continue
+    case "$name" in
+      *.css) ct="text/css; charset=utf-8" ;;
+      *.js)  ct="text/javascript; charset=utf-8" ;;
+      *)     ct="text/html; charset=utf-8" ;;
+    esac
+    put "$f" "app/$name" "$ct"
+    seeded_any=1
+  done
   echo ""
 fi
 
@@ -96,7 +109,7 @@ fi
 
 echo "done. Start the Worker with:"
 if [ "$target" = "--local" ]; then
-  echo "    cd cloudflare && npx wrangler dev        # then open /explore.html"
+  echo "    cd cloudflare && npx wrangler dev        # then open /finding.html"
 else
   echo "    cd cloudflare && npx wrangler deploy"
 fi

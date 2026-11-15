@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GROUNDTRUTH 03 — Both directions</title>
+<link rel="stylesheet" href="atlas.css" />
+</head>
+<body>
+<div class="page">
+  <header class="mast">
+    <div id="locator" aria-hidden="true"></div>
+    <div>
+      <p class="kicker">Groundtruth / Jamaica Bay / 03</p>
+      <h1>A pattern emerges, twice</h1>
+      <p class="deck">Two viewing geometries, two independent experiments, one direction of effect.</p>
+    </div>
+  </header>
+  <div id="app"></div>
+</div>
+<script src="atlas.js"></script>
+<script>
+"use strict";
+(function () {
+  // How the panels are drawn. None of these refits anything: the fits come
+  // from models.json, and only the axes and the colouring change.
+  var view = { scale: "independent", colour: "direction", sensitivity: "screened" };
+
+  ATLAS.boot("evidence", function (ctx) {
+    var A = ATLAS, host = ctx.host, M = A.MODELS;
+    // The shared screen state and this page's three-state control are the same
+    // fact, so they are kept in step.
+    A.state.includePartial = (view.sensitivity === "included");
+
+    var d = M.tracks.descending_069.series.all_dates;
+    var aAll = M.tracks.ascending_133.series.all_dates;
+    var aScr = M.tracks.ascending_133.series.coverage_screened || aAll;
+    var excluded = M.tracks.ascending_133.excluded_by_screen || [];
+
+    host.appendChild(A.h("p", "lede",
+      "Each viewing direction is its own experiment. Ascending and descending passes see the bay from different " +
+      "look angles, with different layover and shadow behaviour and a different baseline brightness, so they are " +
+      "never pooled into one regression. Both show the same thing: weaker marsh return at higher water. " +
+      "Every mark is one measured pass; a <span class=\"rule-d\"></span> dashed rule is the fitted line."));
+
+    // --- controls -------------------------------------------------------------
+    var ctl = A.h("div", "ctl");
+    ctl.innerHTML =
+      '<span class="ctl-label">Vertical scale</span><span class="seg" id="sc">' +
+        '<button data-v="independent" aria-pressed="' + (view.scale === "independent") + '" title="Each panel uses its own range. Best for seeing the pattern within one direction.">Independent</button>' +
+        '<button data-v="common" aria-pressed="' + (view.scale === "common") + '" title="Both panels span the same number of decibels, centred on their own mean. Best for comparing how steep the two lines are.">Common dB span</button>' +
+        '<button data-v="anomaly" aria-pressed="' + (view.scale === "anomaly") + '" title="Each direction is centred on its own mean, so the axis is a departure from that baseline rather than an absolute backscatter.">Anomaly</button></span>' +
+      '<span class="ctl-label">Colour marks by</span><span class="seg" id="cl">' +
+        '<button data-v="direction" aria-pressed="' + (view.colour === "direction") + '">Direction</button>' +
+        '<button data-v="date" aria-pressed="' + (view.colour === "date") + '" title="Shade each mark by when it was acquired, to check whether the apparent water-level pattern is really chronological order in disguise.">Date</button></span>';
+    host.appendChild(ctl);
+    ctl.querySelector("#sc").onclick = function (e) { var b = e.target.closest("button"); if (b) { view.scale = b.dataset.v; A.redraw(); } };
+    ctl.querySelector("#cl").onclick = function (e) { var b = e.target.closest("button"); if (b) { view.colour = b.dataset.v; A.redraw(); } };
+
+    var pair = A.h("div", "pair");
+    host.appendChild(pair);
+    drawPanel(pair, "descending_069");
+    drawPanel(pair, "ascending_133");
+
+    if (view.scale === "anomaly") {
+      host.appendChild(A.h("p", "cap",
+        "<b>Anomaly view.</b> Each panel is centred on the mean marsh-relative backscatter of its own fitted dates, " +
+        "so the axis is a departure from that direction's baseline, not an absolute value. Use it to compare the two " +
+        "slopes; do not read an absolute dB off it."));
+    } else if (view.scale === "common") {
+      host.appendChild(A.h("p", "cap",
+        "<b>Common dB span.</b> Both panels cover the same number of decibels, each centred on its own mean, so a " +
+        "steeper-looking line really is a steeper line. The two directions have different absolute baselines, which " +
+        "is why the tick labels still differ."));
+    }
+    if (view.colour === "date") {
+      host.appendChild(A.h("p", "cap",
+        "<b>Date colouring.</b> Pale marks are early in the record, dark marks are late. If the apparent " +
+        "water-level relationship were really a slow drift over the year, the dark marks would sit on one side of " +
+        "the line and the pale ones on the other. Chapter 04 puts a number on that with residuals against date."));
+    }
+
+    // --- the sensitivity analysis, as a comparison ----------------------------
+    var s2 = A.h("section");
+    host.appendChild(s2);
+    s2.appendChild(A.h("h2", null, "Ascending estimate is sensitive to two incomplete-coverage passes"));
+    s2.appendChild(A.h("p", "prose",
+      "On " + excluded.join(" and ") + " the ascending swath covered only part of the bay, so the bay-wide median " +
+      "came from a different set of pixels than on every other date. These two " + A.im("ascending_133", true) +
+      "passes are the single largest source of doubt on these pages, so the two fits are shown together rather than " +
+      "behind a checkbox you have to toggle and remember."));
+
+    var sctl = A.h("div", "ctl");
+    sctl.innerHTML =
+      '<span class="ctl-label">Ascending fit</span><span class="seg" id="sens">' +
+        '<button data-v="screened" aria-pressed="' + (view.sensitivity === "screened") + '">Primary: screened</button>' +
+        '<button data-v="included" aria-pressed="' + (view.sensitivity === "included") + '">Sensitivity: include the 2 passes</button>' +
+        '<button data-v="both" aria-pressed="' + (view.sensitivity === "both") + '">Compare both</button></span>' +
+      '<button class="reset" id="rs">Reset to the primary analysis</button>';
+    s2.appendChild(sctl);
+    sctl.querySelector("#sens").onclick = function (e) { var b = e.target.closest("button"); if (b) { view.sensitivity = b.dataset.v; A.redraw(); } };
+    sctl.querySelector("#rs").onclick = function () { view.sensitivity = "screened"; view.scale = "independent"; view.colour = "direction"; A.redraw(); };
+
+    A.forest(s2, [
+      { label: "Screened", sub: "n = " + aScr.n + " · passes with ≥90% coverage · primary",
+        value: aScr.regression.slope_db_per_m, ci: aScr.regression.slope_ols_95ci,
+        color: A.ORBITS.ascending_133.color, shape: "square", bold: true },
+      { label: "Including the 2 partial passes", sub: "n = " + aAll.n + " · sensitivity",
+        value: aAll.regression.slope_db_per_m, ci: aAll.regression.slope_ols_95ci,
+        color: A.ORBITS.ascending_133.color, shape: "square", hollow: true }
+    ], { width: 820, labelW: 268, label: "Ascending slope with and without the partial-coverage passes" });
+
+    s2.appendChild(A.h("p", "prose",
+      "Including them moves the slope from <span class=\"num\">" + A.fx(aScr.regression.slope_db_per_m) + "</span> to " +
+      "<span class=\"num\">" + A.fx(aAll.regression.slope_db_per_m) + "</span> dB/m and widens the 95% interval from " +
+      A.ci(aScr.regression.slope_ols_95ci) + " to " + A.ci(aAll.regression.slope_ols_95ci) + ", which includes zero. " +
+      "The interval roughly doubles in width: this is a loss of precision, not a reversal of sign. " +
+      "The point estimate stays negative under every inclusion rule we tried."));
+    s2.appendChild(A.h("p", "prose",
+      "<b>The 90% threshold was chosen after the outlier was seen</b>, which would normally make the screened fit a " +
+      "data-informed choice rather than a pre-registered one. In this record it makes no difference at all: only " +
+      "those two passes are incomplete, and every threshold from 50% to 100% selects the same 23 dates and returns " +
+      "the same slope. Chapter 04 shows that sweep. The cut is a discrete fact about the data, not a tuned knob."));
+    s2.appendChild(A.h("div", "evidence",
+      '<span class="tier sensitivity">sensitivity</span><b>measured</b> marks · <b>modelled</b> intervals · ' +
+      "ascending track 133, HH · the screened fit is primary · select either hollow mark to see its missing footprint on chapter 02's map"));
+
+    // --- what the regression is and is not --------------------------------------
+    var s3 = A.h("section");
+    host.appendChild(s3);
+    s3.appendChild(A.h("h3", null, "What the regression says, in words"));
+    s3.appendChild(A.h("p", "limits",
+      "The fitted line estimates an <b>empirical association</b> between observed water level and marsh-relative " +
+      "backscatter. It does not identify the physical scattering mechanism — rising water could be flooding the " +
+      "marsh surface, changing its roughness, altering the double-bounce return from stems, or some mixture, and " +
+      "these data cannot separate those. The dashed line is ordinary least squares; the shaded band is the 95% " +
+      "confidence interval for the mean response, not a prediction interval for a new acquisition. " +
+      "Pearson and Spearman agree closely in both directions, which means the inverse relationship is not an " +
+      "artefact of fitting a straight line to a curve."));
+
+    // --- panel ------------------------------------------------------------------
+    function drawPanel(hostEl, orbit) {
+      var o = A.ORBITS[orbit], pts = A.PTS[orbit];
+      var primary = orbit === "ascending_133" && M.tracks[orbit].series.coverage_screened
+        ? M.tracks[orbit].series.coverage_screened : M.tracks[orbit].series.all_dates;
+      var alt = orbit === "ascending_133" ? M.tracks[orbit].series.all_dates : null;
+      var showBoth = orbit === "ascending_133" && view.sensitivity === "both";
+      var m = (orbit === "ascending_133" && view.sensitivity === "included") ? alt : primary;
+      var fitPts = pts.filter(function (p) { return m === alt || p.ok; });
+      var reg = m.regression;
+
+      var box = A.h("div");
+      hostEl.appendChild(box);
+      box.innerHTML = "<h3>" + A.im(orbit) + " " + o.label + "</h3>" +
+        '<div><span class="slope">' + A.fx(reg.slope_db_per_m) + '</span> <span class="unit">dB per metre · 95% CI ' +
+        A.ci(reg.slope_ols_95ci) + "</span></div>";
+
+      var W = 520, H = 330, P = { l: 50, r: 14, t: 16, b: 40 };
+      var hs = A.ext(pts.map(function (p) { return p.h; }));
+      var centre = fitPts.reduce(function (s, p) { return s + p.y; }, 0) / fitPts.length;
+      var span;
+      if (view.scale === "independent") {
+        var ys = A.ext(pts.map(function (p) { return p.y; }));
+        span = [ys[0] - (ys[1] - ys[0]) * 0.1, ys[1] + (ys[1] - ys[0]) * 0.1];
+      } else {
+        // One shared number of decibels, so a slope cannot look steeper merely
+        // because its panel is zoomed in.
+        var widest = 0;
+        Object.keys(A.ORBITS).forEach(function (k) {
+          var e = A.ext(A.PTS[k].map(function (p) { return p.y; }));
+          widest = Math.max(widest, (e[1] - e[0]) * 1.2);
+        });
+        span = [centre - widest / 2, centre + widest / 2];
+      }
+      var anomaly = view.scale === "anomaly";
+      var yOf = function (v) { return anomaly ? v - centre : v; };
+      var lo = anomaly ? span[0] - centre : span[0], hi = anomaly ? span[1] - centre : span[1];
+      var xp = (hs[1] - hs[0]) * 0.07;
+      var x = A.scale(hs[0] - xp, hs[1] + xp, P.l, W - P.r), y = A.scale(lo, hi, H - P.b, P.t);
+      var svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, role: "group", "aria-label": o.label + ": marsh-relative backscatter against water level" });
+      A.axes(svg, x, y, P, W, H, A.ticks(hs[0] - xp, hs[1] + xp), A.ticks(lo, hi, 4),
+        function (t) { return A.sgn(t, 1); }, function (t) { return anomaly ? A.sgn(t, 1) : A.fx(t, 1); });
+      svg.appendChild(A.el("text", { class: "axl", x: (P.l + W - P.r) / 2, y: H - 6, "text-anchor": "middle" }, "observed water level (m NAVD88)"));
+      svg.appendChild(A.el("text", { class: "axl", x: P.l, y: P.t - 4 },
+        anomaly ? "marsh − upland HH, departure from this track's mean (dB)" : "marsh − upland HH (dB)"));
+
+      function drawFit(series, color, dash, band) {
+        var r = series.regression;
+        var fp = pts.filter(function (p) { return series === alt || p.ok; });
+        var hm = fp.reduce(function (s, p) { return s + p.h; }, 0) / fp.length;
+        var ym = fp.reduce(function (s, p) { return s + p.y; }, 0) / fp.length;
+        var a = hs[0] - xp, b = hs[1] + xp, c = r.slope_ols_95ci;
+        var L = function (s, v) { return y(yOf(ym + s * (v - hm))); };
+        if (band) {
+          svg.appendChild(A.el("path", {
+            d: "M" + x(a) + " " + L(c[0], a) + "L" + x(b) + " " + L(c[0], b) + "L" + x(b) + " " + L(c[1], b) + "L" + x(a) + " " + L(c[1], a) + "Z",
+            fill: color, "fill-opacity": 0.12
+          }));
+        }
+        svg.appendChild(A.el("line", {
+          x1: x(a), y1: y(yOf(r.intercept_db + r.slope_db_per_m * a)),
+          x2: x(b), y2: y(yOf(r.intercept_db + r.slope_db_per_m * b)),
+          stroke: color, "stroke-width": 2, "stroke-dasharray": dash
+        }));
+      }
+      if (showBoth) {
+        drawFit(alt, A.MUTED, "3 3", false);
+        drawFit(primary, o.color, "7 4", true);
+      } else {
+        drawFit(m, o.color, "7 4", true);
+      }
+
+      var ts = A.ext(pts.map(function (p) { return p.t; }));
+      function shade(p) {
+        if (view.colour !== "date") return null;
+        var f = (p.t - ts[0]) / (ts[1] - ts[0] || 1);
+        return { fill: mix("#e8e2d2", o.color, 0.25 + 0.75 * f), stroke: o.color };
+      }
+      function mix(c1, c2, f) {
+        function rgb(c) { return [1, 3, 5].map(function (i) { return parseInt(c.substr(i, 2), 16); }); }
+        var a = rgb(c1), b = rgb(c2);
+        return "rgb(" + a.map(function (v, i) { return Math.round(v + (b[i] - v) * f); }).join(",") + ")";
+      }
+      pts.forEach(function (p) {
+        if (p.id === A.state.selected) return;
+        var s = shade(p);
+        svg.appendChild(A.mark(p, x(p.h), y(yOf(p.y)), s && p.ok ? { fill: s.fill, stroke: s.stroke } : {}));
+      });
+      var sel = pts.filter(function (p) { return p.id === A.state.selected; })[0];
+      if (sel) svg.appendChild(A.mark(sel, x(sel.h), y(yOf(sel.y)), { sel: true }));
+      pts.filter(function (p) { return !p.ok; }).forEach(function (p) {
+        svg.appendChild(A.el("text", { x: x(p.h) + 9, y: y(yOf(p.y)) + 3.5, class: "lab", style: "font-size:10.5px" }, p.date + " · partial coverage"));
+      });
+      box.appendChild(svg);
+
+      var excludedCount = pts.length - fitPts.length;
+      box.appendChild(A.h("div", "evidence",
+        '<span class="tier ' + (m === alt ? "sensitivity" : "primary") + '">' + (m === alt ? "sensitivity" : "primary") + "</span>" +
+        "<b>measured</b> marks · <b>modelled</b> dashed OLS fit and 95% band for the mean response · HH · n = <b>" + m.n + "</b>" +
+        (excludedCount ? " · " + excludedCount + " hollow passes drawn but not fitted" : (pts.some(function (p) { return !p.ok; }) ? " · hollow passes included in this fit" : "")) +
+        " · Pearson r " + A.fx(reg.pearson_r) + " · Spearman ρ " + A.fx(reg.spearman_rho) +
+        " · association, not a scattering mechanism" +
+        (showBoth ? " · grey dotted line: the fit including the two partial passes" : "")));
+    }
+  });
+})();
+</script>
+</body>
+</html>

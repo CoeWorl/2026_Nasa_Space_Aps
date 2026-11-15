@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GROUNDTRUTH 06 — Marsh by marsh</title>
+<link rel="stylesheet" href="atlas.css" />
+</head>
+<body>
+<div class="page">
+  <header class="mast">
+    <div id="locator" aria-hidden="true"></div>
+    <div>
+      <p class="kicker">Groundtruth / Jamaica Bay / 06</p>
+      <h1>One marsh at a time</h1>
+      <p class="deck">The bay-wide median is an average of forty-five places that do not all behave alike.</p>
+    </div>
+  </header>
+  <div id="app"></div>
+</div>
+<script src="atlas.js"></script>
+<script>
+"use strict";
+(function () {
+  var view = { colour: "shrunk" };
+
+  ATLAS.boot("marshes", function (ctx) {
+    var A = ATLAS, host = ctx.host, R = A.ROBUST;
+    var orbit = A.state.orbit, o = A.ORBITS[orbit];
+    if (!R || !R.regions || !R.regions[orbit]) {
+      host.appendChild(A.h("div", "err", "<b>robustness.json has no per-polygon block for this track.</b> Run <code>backend/scripts/make_robustness.py</code>."));
+      return;
+    }
+    var B = R.regions[orbit], pooled = B.pooled, perm = B.permutation;
+    var byId = {};
+    B.fits.forEach(function (f) { byId[f.region_id] = f; });
+
+    host.appendChild(A.h("p", "lede",
+      "Every slope on the earlier chapters is a bay-wide median: one number per acquisition, taken across all the " +
+      "sampled marsh polygons. That is a robust summary, and it hides everything about <i>where</i> in the bay the " +
+      "response comes from. This chapter opens the median up. The honest headline is that the <b>average polygon " +
+      "responds negatively</b>, and that the spread between polygons is large and not yet explained."));
+
+    var ctl = A.h("div", "ctl");
+    ctl.innerHTML =
+      '<span class="ctl-label">Track</span><span class="seg" id="tk">' +
+        Object.keys(A.ORBITS).map(function (k) {
+          return '<button data-v="' + k + '" aria-pressed="' + (k === orbit) + '">' + A.ORBITS[k].label + "</button>";
+        }).join("") + "</span>" +
+      '<span class="ctl-label">Colour polygons by</span><span class="seg" id="cl">' +
+        '<button data-v="shrunk" aria-pressed="' + (view.colour === "shrunk") + '" title="The partially pooled slope: each polygon pulled toward the bay-wide mean in proportion to how uncertain its own estimate is.">Shrunken slope</button>' +
+        '<button data-v="prob" aria-pressed="' + (view.colour === "prob") + '" title="Posterior probability that this polygon\'s slope is below zero, from the same partial-pooling model.">P(slope &lt; 0)</button>' +
+        '<button data-v="none" aria-pressed="' + (view.colour === "none") + '">Nothing</button></span>';
+    host.appendChild(ctl);
+    ctl.querySelector("#tk").onclick = function (e) {
+      var b = e.target.closest("button");
+      if (b && b.dataset.v !== orbit) A.select(A.fitPoints(b.dataset.v)[0].id);
+    };
+    ctl.querySelector("#cl").onclick = function (e) { var b = e.target.closest("button"); if (b) { view.colour = b.dataset.v; A.redraw(); } };
+
+    // --- the caterpillar -------------------------------------------------------
+    var s1 = A.h("section", "tight");
+    host.appendChild(s1);
+    s1.appendChild(A.h("h2", null, "Forty-five polygons, sorted by their own slope"));
+    s1.appendChild(A.h("p", "prose",
+      "Each row is one marsh polygon: its own least-squares slope with a 95% HC3 interval, and beside it the " +
+      A.def("partially pooled", "A random-effects (DerSimonian-Laird) model estimates a bay-wide mean and a between-polygon spread, then pulls each polygon's estimate toward that mean in proportion to its own uncertainty. Noisy polygons move a lot; well-determined ones barely move.") +
+      " estimate that borrows strength from the others. Forty-five independent regressions would be forty-five " +
+      "chances to find something; one model with a shared mean is the defensible way to ask the same question."));
+    drawCaterpillar(s1, B, o);
+
+    // --- what the counts are worth ----------------------------------------------
+    var s2 = A.h("section");
+    host.appendChild(s2);
+    s2.appendChild(A.h("h2", null, "Why “31 of 45 are negative” is not the evidence it looks like"));
+    s2.appendChild(A.h("p", "prose",
+      "Of the " + B.n_polygons + " polygons with enough " + o.short + " passes to fit, <b>" + B.n_negative +
+      "</b> have a negative slope and <b>" + B.n_p05_uncorrected + "</b> clear an uncorrected 5% test — against " +
+      B.expected_false_positives_at_5pc + " expected by chance if nothing were happening anywhere. After a " +
+      A.def("Benjamini–Hochberg", "Controls the false discovery rate: the expected share of claimed discoveries that are false. Less conservative than Bonferroni, which would be badly over-strict here because the polygon tests are strongly correlated.") +
+      " correction across the " + B.n_polygons + " tests, <b>" + B.n_q05_bh + "</b> survive at q &lt; 0.05."));
+    s2.appendChild(A.h("p", "prose",
+      "But those tests are <b>not independent</b>. Every polygon sees the same " + (B.fits[0] ? B.fits[0].n : "") +
+      " acquisitions, the same water levels, the same weather. So the count was tested against a null that keeps " +
+      "that dependence: water level is permuted across acquisition dates, with each date's entire spatial vector of " +
+      "polygon values moving together, and all " + B.n_polygons + " slopes refitted — " +
+      perm.draws.toLocaleString() + " times."));
+    drawPermutation(s2, perm, B);
+    s2.appendChild(A.h("p", "prose",
+      "Under that null, <b>" + perm.observed_n_negative + " of " + B.n_polygons + " negative is not surprising</b> " +
+      "(p = " + perm.p_n_negative.toFixed(3) + "; the null reaches " + Math.round(perm.null_n_negative_95) +
+      " or more one time in twenty). The reason is simple: when water level is shuffled, all the polygons move " +
+      "together, so the count swings wildly rather than hovering near half. The median slope across polygons is a " +
+      "better statistic — observed <span class=\"num\">" + A.fx(perm.observed_median_slope) + "</span> dB/m, " +
+      "p = " + perm.p_median_slope.toFixed(3) + " — and it is suggestive rather than conclusive. " +
+      "<b>A simple binomial test here would have badly overstated the evidence.</b>"));
+    s2.appendChild(A.h("div", "evidence",
+      '<span class="tier diagnostic">diagnostic</span><b>modelled</b> · permutation at the acquisition level, ' +
+      perm.draws.toLocaleString() + " draws, seeded · the unit shuffled is " + perm.unit +
+      " · this is why the map is not coloured by an uncorrected p-value"));
+
+    // --- the defensible statement ------------------------------------------------
+    var s3 = A.h("section");
+    host.appendChild(s3);
+    s3.appendChild(A.h("h2", null, "The defensible per-polygon statement"));
+    s3.appendChild(A.h("p", "prose",
+      "The random-effects model gives a mean polygon response of <span class=\"num\">" + A.fx(pooled.mu_db_per_m) +
+      "</span> dB/m, 95% CI " + A.ci(pooled.mu_ci95) + " — clearly negative — with a between-polygon standard " +
+      "deviation of <span class=\"num\">" + A.fx(pooled.tau_db_per_m) + "</span> dB/m. " +
+      "That τ is larger than the mean itself: the polygons genuinely differ, and " +
+      "<span class=\"num\">" + A.pct(pooled.i_squared) + "</span> of the variation between their estimates is real " +
+      "heterogeneity rather than estimation noise (Q = " + A.fx(pooled.q, 0) + ", p " + A.pv(pooled.q_p) + "). " +
+      "After shrinkage, <b>" + B.n_shrunk_prob_negative_95 + " of " + B.n_polygons + "</b> polygons have at least a " +
+      "95% posterior probability of a negative slope."));
+    s3.appendChild(A.h("p", "prose",
+      "So the right sentence is: <i>the average marsh polygon in Jamaica Bay returns less radar signal at higher " +
+      "water, and how strongly it does so varies substantially across the bay in ways these data do not explain.</i> " +
+      "Elevation, vegetation type, distance from a channel and restoration history are all candidates, and testing " +
+      "them needs a hierarchical model over polygon-level observations with those covariates — the single most " +
+      "valuable extension to this work, and beyond what one year of acquisitions can support."));
+
+    // --- map and detail -----------------------------------------------------------
+    var s4 = A.h("section");
+    host.appendChild(s4);
+    s4.appendChild(A.h("h2", null, "Where they are"));
+    var two = A.h("div", "two"), left = A.h("div"), right = A.h("div");
+    two.appendChild(left); two.appendChild(right);
+    s4.appendChild(two);
+
+    var vals = B.fits.map(function (f) { return f.partial_pooled.slope_db_per_m; });
+    var vext = A.ext(vals), lim = Math.max(Math.abs(vext[0]), Math.abs(vext[1]));
+    A.drawMap(left, {
+      regionFill: function (id) {
+        if (view.colour === "none") return null;
+        var f = byId[id];
+        if (!f) return { fill: "#b9b4a5", opacity: 0.5, stroke: "#8d8778" };
+        if (view.colour === "prob") {
+          var p = f.partial_pooled.prob_negative;
+          return { fill: ramp(p, 0.5, 1, A.PAPER, A.ORBITS.descending_069.color), opacity: 0.85 };
+        }
+        var v = f.partial_pooled.slope_db_per_m;
+        return v < 0
+          ? { fill: ramp(-v, 0, lim, A.PAPER, A.ORBITS.descending_069.color), opacity: 0.85 }
+          : { fill: ramp(v, 0, lim, A.PAPER, A.ORBITS.ascending_133.color), opacity: 0.85 };
+      },
+      regionTitle: function (id) {
+        var f = byId[id];
+        return f
+          ? id + "\nown slope " + A.fx(f.slope_db_per_m) + " dB/m, 95% CI " + A.ci(f.ci95_hc3) +
+            "\nshrunken " + A.fx(f.partial_pooled.slope_db_per_m) + " dB/m · P(<0) = " + A.fx(f.partial_pooled.prob_negative) +
+            "\nq (BH) = " + A.pv(f.q_bh) + " · n = " + f.n + "\nClick for its own series."
+          : id + "\nnot enough valid " + o.short + " passes to fit a slope";
+      }
+    });
+    if (view.colour !== "none") left.appendChild(colourKey(lim));
+    left.appendChild(A.h("div", "evidence",
+      '<span class="tier diagnostic">diagnostic</span><b>modelled</b> fill · partial-pooling estimates, not ' +
+      "uncorrected p-values · grey polygons had too few valid passes to fit · the fill is an estimate with " +
+      "uncertainty behind it, so read the caterpillar above before reading the map"));
+
+    drawDetail(right, B, byId, o);
+
+    // ============================= figures ===================================
+    function ramp(v, lo, hi, c0, c1) {
+      var f = Math.max(0, Math.min(1, (v - lo) / (hi - lo || 1)));
+      function rgb(c) {
+        if (c[0] !== "#") return [243, 240, 232];
+        return [1, 3, 5].map(function (i) { return parseInt(c.substr(i, 2), 16); });
+      }
+      var a = rgb(c0), b = rgb(c1);
+      return "rgb(" + a.map(function (x, i) { return Math.round(x + (b[i] - x) * f); }).join(",") + ")";
+    }
+
+    function colourKey(lim) {
+      var box = A.h("div");
+      var W = 330, H = 40, svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, style: "max-width:330px;margin-top:10px", role: "img", "aria-label": "Key for the polygon fill" });
+      for (var i = 0; i < 60; i++) {
+        var f = i / 59, c;
+        if (view.colour === "prob") c = ramp(0.5 + 0.5 * f, 0.5, 1, A.PAPER, A.ORBITS.descending_069.color);
+        else {
+          var v = -lim + 2 * lim * f;
+          c = v < 0 ? ramp(-v, 0, lim, A.PAPER, A.ORBITS.descending_069.color) : ramp(v, 0, lim, A.PAPER, A.ORBITS.ascending_133.color);
+        }
+        svg.appendChild(A.el("rect", { x: i * (W / 60), y: 2, width: W / 60 + 0.6, height: 13, fill: c }));
+      }
+      svg.appendChild(A.el("rect", { x: 0, y: 2, width: W, height: 13, fill: "none", stroke: A.INK, "stroke-width": 0.8 }));
+      if (view.colour === "prob") {
+        svg.appendChild(A.el("text", { x: 0, y: 27, class: "labm", style: "font-size:10px" }, "0.50"));
+        svg.appendChild(A.el("text", { x: W, y: 27, "text-anchor": "end", class: "labm", style: "font-size:10px" }, "1.00"));
+        svg.appendChild(A.el("text", { x: W / 2, y: 38, "text-anchor": "middle", class: "axl", style: "font-size:10px" }, "posterior probability the slope is negative"));
+      } else {
+        svg.appendChild(A.el("text", { x: 0, y: 27, class: "labm", style: "font-size:10px" }, A.sgn(-lim, 1)));
+        svg.appendChild(A.el("text", { x: W / 2, y: 27, "text-anchor": "middle", class: "labm", style: "font-size:10px" }, "0"));
+        svg.appendChild(A.el("text", { x: W, y: 27, "text-anchor": "end", class: "labm", style: "font-size:10px" }, A.sgn(lim, 1)));
+        svg.appendChild(A.el("text", { x: W / 2, y: 38, "text-anchor": "middle", class: "axl", style: "font-size:10px" }, "shrunken slope, dB per metre"));
+      }
+      box.appendChild(svg);
+      return box;
+    }
+
+    function drawCaterpillar(hostEl, B, o) {
+      var fits = B.fits, rowH = 15, W = 1120, P = { l: 150, r: 300, t: 26, b: 34 };
+      var H = P.t + fits.length * rowH + P.b;
+      var lo = Math.min.apply(null, fits.map(function (f) { return f.ci95_hc3[0]; }));
+      var hi = Math.max.apply(null, fits.map(function (f) { return f.ci95_hc3[1]; }).concat([0]));
+      var pad = (hi - lo) * 0.04;
+      var x = A.scale(lo - pad, hi + pad, P.l, W - P.r);
+      var svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, role: "group", "aria-label": "Per-polygon slopes with intervals" });
+      A.ticks(lo - pad, hi + pad, 6).forEach(function (t) {
+        svg.appendChild(A.el("line", { x1: x(t), x2: x(t), y1: P.t - 6, y2: H - P.b, stroke: A.RULE }));
+        svg.appendChild(A.el("text", { x: x(t), y: H - P.b + 15, "text-anchor": "middle", class: "labm", style: "font-size:10.5px;fill:" + A.MUTED }, A.sgn(t, 1)));
+      });
+      svg.appendChild(A.el("line", { x1: x(0), x2: x(0), y1: P.t - 6, y2: H - P.b, stroke: A.INK, "stroke-width": 1.3 }));
+      svg.appendChild(A.el("text", { x: x(0), y: P.t - 12, "text-anchor": "middle", class: "axl" }, "no relationship"));
+      // The pooled mean, as a band behind everything.
+      svg.appendChild(A.el("rect", { x: x(pooled.mu_ci95[0]), y: P.t - 6, width: x(pooled.mu_ci95[1]) - x(pooled.mu_ci95[0]), height: H - P.b - P.t + 6, fill: A.MARSH, "fill-opacity": 0.14 }));
+      svg.appendChild(A.el("line", { x1: x(pooled.mu_db_per_m), x2: x(pooled.mu_db_per_m), y1: P.t - 6, y2: H - P.b, stroke: A.MARSH, "stroke-width": 1.6 }));
+      svg.appendChild(A.el("text", { x: x(pooled.mu_db_per_m), y: H - P.b + 28, "text-anchor": "middle", class: "lab", style: "font-size:10.5px;font-weight:600" }, "pooled mean " + A.fx(pooled.mu_db_per_m)));
+      svg.appendChild(A.el("text", { x: (P.l + W - P.r) / 2, y: H - 4, "text-anchor": "middle", class: "axl" }, "slope, dB per metre of water level"));
+
+      fits.forEach(function (f, i) {
+        var cy = P.t + i * rowH + rowH / 2;
+        var on = f.region_id === A.state.region;
+        var g = A.el("g", { class: "pt", tabindex: 0, role: "button", "aria-label": f.region_id + " slope " + A.fx(f.slope_db_per_m) });
+        if (on) g.appendChild(A.el("rect", { x: 0, y: cy - rowH / 2, width: W, height: rowH, fill: A.MARSH, "fill-opacity": 0.22 }));
+        g.appendChild(A.el("text", { x: P.l - 10, y: cy + 3.5, "text-anchor": "end", class: "labm", style: "font-size:10px" + (on ? ";font-weight:700" : "") }, f.region_id.replace("osm_", "")));
+        g.appendChild(A.el("line", { x1: x(f.ci95_hc3[0]), x2: x(f.ci95_hc3[1]), y1: cy, y2: cy, stroke: A.FAINT, "stroke-width": 1.2 }));
+        g.appendChild(A.el("circle", { cx: x(f.slope_db_per_m), cy: cy, r: 3, fill: A.PAPER, stroke: A.FAINT, "stroke-width": 1.4 }));
+        var sp = f.partial_pooled;
+        g.appendChild(A.el("line", { x1: x(sp.ci95[0]), x2: x(sp.ci95[1]), y1: cy, y2: cy, stroke: o.color, "stroke-width": 2 }));
+        g.appendChild(A.el("circle", { cx: x(sp.slope_db_per_m), cy: cy, r: 3.4, fill: o.color }));
+        g.appendChild(A.el("text", { x: W - P.r + 10, y: cy + 3.5, class: "labm", style: "font-size:10px" },
+          A.fx(sp.slope_db_per_m) + "  " + A.ci(sp.ci95) + "   n=" + f.n + "   q=" + (f.q_bh < 0.001 ? "<.001" : f.q_bh.toFixed(3))));
+        g.appendChild(A.el("title", {}, f.region_id + " · " + (f.kind || "wetland") + " · " + f.n_pixels + " pixels\n" +
+          "own slope " + A.fx(f.slope_db_per_m) + " dB/m, 95% CI " + A.ci(f.ci95_hc3) + "\n" +
+          "shrunken " + A.fx(sp.slope_db_per_m) + ", P(<0) = " + A.fx(sp.prob_negative) + "\nq (BH) = " + A.pv(f.q_bh)));
+        g.onclick = function () { A.state.region = A.state.region === f.region_id ? null : f.region_id; A.redraw(); };
+        g.onkeydown = function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); g.onclick(); } };
+        svg.appendChild(g);
+      });
+      hostEl.appendChild(svg);
+      hostEl.appendChild(A.h("p", "cap",
+        "Hollow marks and pale bars are each polygon's own estimate; filled marks and heavy bars are the same " +
+        "polygon after partial pooling. Notice how far the noisiest estimates move and how little the " +
+        "well-determined ones do. The green band is the pooled mean and its interval. Click a row to select that " +
+        "polygon — it will highlight on the map below and on chapter 02's."));
+      hostEl.appendChild(A.h("div", "evidence",
+        '<span class="tier diagnostic">diagnostic</span><b>modelled</b> · ' + B.n_polygons +
+        " polygons with ≥6 valid passes · HC3 intervals on the per-polygon fits · DerSimonian–Laird random effects " +
+        "for the pooling · q is the Benjamini–Hochberg false-discovery rate across these " + B.n_polygons + " tests"));
+    }
+
+    function drawPermutation(hostEl, perm, B) {
+      var W = 820, H = 140, P = { l: 48, r: 18, t: 22, b: 34 };
+      var x = A.scale(0, B.n_polygons, P.l, W - P.r);
+      var svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Permutation null for the number of negative polygon slopes" });
+      svg.appendChild(A.el("line", { x1: P.l, x2: W - P.r, y1: H - P.b, y2: H - P.b, stroke: A.RULE }));
+      [0, 10, 20, 30, 40, B.n_polygons].forEach(function (t) {
+        svg.appendChild(A.el("text", { x: x(t), y: H - P.b + 15, "text-anchor": "middle", class: "labm", style: "font-size:10.5px;fill:" + A.MUTED }, String(t)));
+      });
+      // The null is summarised by its mean and its 95th percentile, which is
+      // all the file carries; the observed count sits inside it.
+      svg.appendChild(A.el("rect", { x: x(0), y: P.t, width: x(perm.null_n_negative_95) - x(0), height: H - P.b - P.t, fill: A.FAINT, "fill-opacity": 0.18 }));
+      svg.appendChild(A.el("text", { x: x(perm.null_n_negative_95) - 6, y: P.t + 14, "text-anchor": "end", class: "axl" }, "95% of the null lies left of " + Math.round(perm.null_n_negative_95)));
+      svg.appendChild(A.el("line", { x1: x(perm.null_n_negative_mean), x2: x(perm.null_n_negative_mean), y1: P.t, y2: H - P.b, stroke: A.MUTED, "stroke-dasharray": "4 3" }));
+      svg.appendChild(A.el("text", { x: x(perm.null_n_negative_mean), y: H - P.b + 30, "text-anchor": "middle", class: "axl" }, "null mean " + perm.null_n_negative_mean.toFixed(1)));
+      svg.appendChild(A.el("line", { x1: x(perm.observed_n_negative), x2: x(perm.observed_n_negative), y1: P.t - 8, y2: H - P.b, stroke: A.INK, "stroke-width": 2.4 }));
+      svg.appendChild(A.el("text", { x: x(perm.observed_n_negative), y: P.t - 12, "text-anchor": "middle", class: "lab", style: "font-weight:600" }, "observed " + perm.observed_n_negative));
+      svg.appendChild(A.el("text", { x: (P.l + W - P.r) / 2, y: H - 4, "text-anchor": "middle", class: "axl" }, "number of polygons with a negative slope, out of " + B.n_polygons));
+      hostEl.appendChild(svg);
+    }
+
+    function drawDetail(hostEl, B, byId, o) {
+      hostEl.appendChild(A.h("h3", null, "One polygon"));
+      var block = A.SERIES.regions[orbit];
+      var r = block.regions.filter(function (q) { return q.region_id === A.state.region; })[0];
+      if (!r) {
+        hostEl.appendChild(A.h("p", "cap", "Click a marsh polygon on the map, or a row in the caterpillar above, to see its own measurements here."));
+        return;
+      }
+      var f = byId[r.region_id];
+      var box = A.h("div", "obs");
+      hostEl.appendChild(box);
+      box.appendChild(A.h("div", null, '<span class="mono">' + r.region_id + "</span> · " + (r.kind || "wetland") +
+        ' · <span class="mono">' + r.n_pixels + "</span> pixels at 10 m"));
+      var ids = block.acquisition_ids;
+      var pts = ids.map(function (id, i) { return { p: A.BYID[id], v: r.marsh_relative_db[i], c: r.coverage_fraction[i] }; })
+        .filter(function (q) { return q.v != null && q.p; });
+      if (pts.length > 1) {
+        var W = 420, H = 190, P = { l: 44, r: 10, t: 14, b: 28 };
+        var ts = A.ext(pts.map(function (q) { return q.p.t; })), ys = A.ext(pts.map(function (q) { return q.v; }));
+        var yp = (ys[1] - ys[0]) * 0.12 || 0.2;
+        var x = A.scale(ts[0] - 8 * 864e5, ts[1] + 8 * 864e5, P.l, W - P.r), y = A.scale(ys[0] - yp, ys[1] + yp, H - P.b, P.t);
+        var svg = A.el("svg", { viewBox: "0 0 " + W + " " + H, role: "group", "aria-label": "This polygon's backscatter over time" });
+        A.axes(svg, x, y, P, W, H, A.monthTicks(ts[0], ts[1]), A.ticks(ys[0] - yp, ys[1] + yp, 3), A.monthFmt, function (t) { return A.fx(t, 1); });
+        svg.appendChild(A.el("path", { d: pts.map(function (q, i) { return (i ? "L" : "M") + x(q.p.t).toFixed(1) + " " + y(q.v).toFixed(1); }).join(""), fill: "none", stroke: o.color, "stroke-width": 1.2 }));
+        pts.forEach(function (q) {
+          svg.appendChild(A.mark({ orbit: q.p.orbit, id: q.p.id, date: q.p.date, h: q.p.h, y: q.v, ok: q.c >= 0.9 },
+            x(q.p.t), y(q.v), { r: 3.2, sel: q.p.id === A.state.selected,
+              title: q.p.date + "\n" + A.fx(q.v) + " dB · coverage " + A.pct(q.c) + " · h " + A.fx(q.p.h) + " m" }));
+        });
+        box.appendChild(svg);
+      }
+      box.appendChild(A.h("p", "cap", "This polygon's median HH minus the bay-wide upland reference, " + o.short +
+        " passes. Hollow marks mean under 90% of this polygon was observed on that date."));
+      if (f) {
+        var sp = f.partial_pooled;
+        box.appendChild(A.h("dl", "facts",
+          "<dt>Own slope</dt><dd>" + A.fx(f.slope_db_per_m) + " dB/m</dd>" +
+          "<dt>95% CI (HC3)</dt><dd>" + A.ci(f.ci95_hc3) + "</dd>" +
+          "<dt>Shrunken slope</dt><dd>" + A.fx(sp.slope_db_per_m) + " dB/m</dd>" +
+          "<dt>P(slope &lt; 0)</dt><dd>" + A.fx(sp.prob_negative) + "</dd>" +
+          "<dt>q, BH-corrected</dt><dd>" + A.pv(f.q_bh) + "</dd>" +
+          "<dt>Passes used</dt><dd>" + f.n + "</dd>"));
+        box.appendChild(A.h("div", "evidence",
+          '<span class="tier exploratory">exploratory</span><b>modelled</b> · one polygon out of ' + B.n_polygons +
+          " · the q-value already accounts for having looked at all of them · not a validated per-marsh result"));
+      } else {
+        box.appendChild(A.h("div", "evidence",
+          '<span class="tier exploratory">exploratory</span><b>insufficient evidence</b> · too few usable passes for this polygon · no model fitted'));
+      }
+    }
+  });
+})();
+</script>
+</body>
+</html>
