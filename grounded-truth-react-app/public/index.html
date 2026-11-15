@@ -1,32 +1,71 @@
 <!doctype html>
 <html lang="en">
 	<head>
-		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Hello, World!</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>GROUNDTRUTH · NISAR surface-change explorer</title>
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=Public+Sans:wght@400;600&display=swap"
+			rel="stylesheet"
+		/>
+		<link rel="stylesheet" href="/src/style.css" />
 	</head>
 	<body>
-		<h1 id="heading"></h1>
-		<p>This page comes from a static asset stored at `public/index.html` as configured in `wrangler.jsonc`.</p>
-		<button id="button" type="button">Fetch a random UUID</button>
-		<output id="random" for="button"></output>
-		<script>
-			fetch('/message')
-				.then((resp) => resp.text())
-				.then((text) => {
-					const h1 = document.getElementById('heading');
-					h1.textContent = text;
-				});
+		<aside>
+			<div>
+				<h1>GROUNDTRUTH</h1>
+				<p class="sub">NISAR radar backscatter. Click the image to read the measurement at that pixel.</p>
+			</div>
 
-			const button = document.getElementById("button");
-			button.addEventListener("click", () => {
-				fetch('/random')
-					.then((resp) => resp.text())
-					.then((text) => {
-						const random = document.getElementById('random');
-						random.textContent = text;
-					});
-			});
-		</script>
+			<section>
+				<h2>Observation</h2>
+				<select id="scene" aria-label="Observation"></select>
+				<div id="manual" hidden>
+					<label for="name">Index not found. Enter an artifact name</label>
+					<input id="name" type="text" placeholder="nisar_2026-10-04.tif" />
+					<button id="load" type="button">Load</button>
+				</div>
+			</section>
+
+			<section>
+				<h2>Display range (dB)</h2>
+				<div id="ramp"></div>
+				<div class="row"><span>Low</span><b id="loV"></b></div>
+				<input id="lo" type="range" step="0.5" aria-label="Low dB" />
+				<div class="row"><span>High</span><b id="hiV"></b></div>
+				<input id="hi" type="range" step="0.5" aria-label="High dB" />
+			</section>
+
+			<section>
+				<h2>Pixel</h2>
+				<div id="readout"><p>No pixel selected.</p></div>
+			</section>
+
+			<section>
+				<h2>Provenance</h2>
+				<dl id="prov">
+					<dt>Status</dt>
+					<dd>Select an observation.</dd>
+				</dl>
+			</section>
+
+			<section>
+				<h2>API</h2>
+				<label for="api">Worker URL</label>
+				<input id="api" type="text" />
+			</section>
+		</aside>
+
+		<main>
+			<div id="stage" hidden>
+				<canvas id="cv" aria-label="Backscatter image"></canvas>
+				<div id="mark"></div>
+			</div>
+			<div class="empty" id="empty"><p>Loading observations from the API.</p></div>
+			<div id="status" hidden></div>
+		</main>
+
+		<script type="module" src="grounded-truth-react-app/src/index.ts"></script>
 	</body>
 </html>
